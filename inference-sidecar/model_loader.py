@@ -8,10 +8,12 @@ import io
 import os
 import time
 from typing import Tuple
+from urllib.parse import urlparse
 
 import numpy as np
 import requests
 from PIL import Image
+from requests.exceptions import InvalidURL
 
 
 @dataclass
@@ -66,9 +68,35 @@ class ImageModel:
             return Image.open(image_path).convert("RGB")
         if not image_url:
             raise ValueError("image_url or image_path is required")
+        ImageModel._validate_url(image_url)
         response = requests.get(image_url, timeout=5)
         response.raise_for_status()
         return Image.open(io.BytesIO(response.content)).convert("RGB")
+
+    @staticmethod
+    def _validate_url(url: str) -> None:
+        """Validate URL to prevent SSRF attacks."""
+        try:
+            parsed = urlparse(url)
+        except (ValueError, InvalidURL):
+            raise ValueError("Invalid URL format")
+
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError(f"Scheme {parsed.scheme} not allowed, only http/https")
+
+        hostname = parsed.hostname
+        if not hostname:
+            raise ValueError("URL missing hostname")
+
+        forbidden_ips = {"127.0.0.1", "localhost", "0.0.0.0"}
+        if hostname in forbidden_ips:
+            raise ValueError(f"Access to {hostname} not allowed")
+
+        if hostname.startswith(("10.", "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.", "192.168.", "169.254.")):
+            raise ValueError("Access to private IP ranges not allowed")
+
+        if hostname.endswith((".local", ".internal")):
+            raise ValueError("Access to local domains not allowed")
 
     @staticmethod
     def _preprocess(image: Image.Image) -> np.ndarray:
