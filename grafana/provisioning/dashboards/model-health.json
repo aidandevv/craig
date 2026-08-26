@@ -1,0 +1,12 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "panels": [
+    {"type": "timeseries", "title": "Model precision / recall / F1", "targets": [{"expr": "apartment_hunter_model_precision", "legendFormat": "precision"}, {"expr": "apartment_hunter_model_recall", "legendFormat": "recall"}, {"expr": "apartment_hunter_model_f1", "legendFormat": "F1"}], "gridPos": {"h": 9, "w": 12, "x": 0, "y": 0}},
+    {"type": "histogram", "title": "Fraud score distribution", "targets": [{"expr": "sum(rate(apartment_hunter_fraud_score_bucket[1h])) by (le)", "legendFormat": "{{le}}"}], "gridPos": {"h": 9, "w": 12, "x": 12, "y": 0}},
+    {"type": "timeseries", "title": "Inference availability", "targets": [{"expr": "apartment_hunter_model_available", "legendFormat": "model available"}], "gridPos": {"h": 8, "w": 12, "x": 0, "y": 9}}
+  ],
+  "schemaVersion": 39,
+  "title": "Apartment Hunter — Model Health",
+  "version": 1
+}

@@ -1,0 +1,11 @@
+{
+  email {$CADDY_EMAIL}
+}
+
+{$GRAFANA_HOST} {
+  reverse_proxy grafana:3000
+}
+
+{$DASHBOARD_HOST} {
+  reverse_proxy web-ui:5000
+}

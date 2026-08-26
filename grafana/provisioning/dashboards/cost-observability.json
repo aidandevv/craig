@@ -1,0 +1,15 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "panels": [
+    {"type": "timeseries", "title": "Vision feature units", "targets": [{"expr": "sum by (feature) (apartment_hunter_vision_feature_units_total)", "legendFormat": "{{feature}}"}], "gridPos": {"h": 9, "w": 12, "x": 0, "y": 0}},
+    {"type": "timeseries", "title": "Vision budget skips", "targets": [{"expr": "sum by (feature) (apartment_hunter_vision_budget_skipped_total)", "legendFormat": "{{feature}}"}], "gridPos": {"h": 9, "w": 12, "x": 12, "y": 0}},
+    {"type": "stat", "title": "Qualified notification deliveries", "targets": [{"expr": "sum(apartment_hunter_notification_deliveries_total{status=\"sent\"})"}], "gridPos": {"h": 8, "w": 6, "x": 0, "y": 9}},
+    {"type": "timeseries", "title": "Monthly cost by service", "targets": [{"expr": "apartment_hunter_monthly_cost_total", "legendFormat": "{{service}}"}], "gridPos": {"h": 8, "w": 9, "x": 6, "y": 9}},
+    {"type": "timeseries", "title": "Cost per outcome", "targets": [{"expr": "apartment_hunter_cost_per_listing", "legendFormat": "{{unit}}"}], "gridPos": {"h": 8, "w": 9, "x": 15, "y": 9}},
+    {"type": "stat", "title": "Rolling 30-day cost", "targets": [{"expr": "apartment_hunter_cost_running_total"}], "gridPos": {"h": 8, "w": 6, "x": 0, "y": 17}}
+  ],
+  "schemaVersion": 39,
+  "title": "Apartment Hunter — Cost & Usage",
+  "version": 1
+}

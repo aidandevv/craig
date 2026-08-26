@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ listing.title }} · Apartment Hunter{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('dashboard') }}">← Back to qualified listings</a>
+<section class="detail panel">
+  <div><h1>{{ listing.title }}</h1><p class="muted">{{ listing.location or "Location unavailable" }} · ${{ "{:,}".format(listing.price) }}</p></div>
+  {% if listing.url %}<a class="button" target="_blank" rel="noopener noreferrer" href="{{ listing.url }}">Open original listing</a>{% endif %}
+  <dl><div><dt>Fraud risk</dt><dd>{{ "%.0f"|format((listing.fraud_score or 0) * 100) }}%</dd></div><div><dt>Fit</dt><dd>{{ "%.0f"|format((listing.fit_score or 0) * 100) }}%</dd></div><div><dt>Bedrooms</dt><dd>{{ listing.bedrooms or "—" }}</dd></div><div><dt>Status</dt><dd>{{ listing.status }}</dd></div></dl>
+  <section><h2>Risk signals</h2>{% if listing.fraud_flags %}<ul>{% for flag in listing.fraud_flags %}<li>{{ flag|replace('_', ' ') }}</li>{% endfor %}</ul>{% else %}<p>No risk flags were found.</p>{% endif %}</section>
+  {% if listing.reverse_image_matches %}<section><h2>Reverse-image matches</h2><ul>{% for match in listing.reverse_image_matches %}<li><a target="_blank" rel="noopener noreferrer" href="{{ match }}">{{ match }}</a></li>{% endfor %}</ul></section>{% endif %}
+  {% if listing.description %}<section><h2>Description</h2><p class="description">{{ listing.description }}</p></section>{% endif %}
+  <form id="status-form"><h2>Review status</h2><label>Status <select name="status">{% for status in ['new','interested','contacted','toured','applied','passed'] %}<option value="{{ status }}" {{ 'selected' if listing.status == status }}>{{ status }}</option>{% endfor %}</select></label><label>Notes <textarea name="notes" rows="4">{{ listing.user_notes }}</textarea></label><button>Save review</button><span id="saved" role="status"></span></form>
+</section>
+<script>
+document.getElementById('status-form').addEventListener('submit', async (event) => { event.preventDefault(); const form = event.currentTarget; const payload = {status: form.status.value, notes: form.notes.value}; const response = await fetch('{{ url_for("mark_listing", listing_id=listing.id) }}', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)}); document.getElementById('saved').textContent = response.ok ? 'Saved.' : 'Could not save changes.'; });
+</script>
+{% endblock %}

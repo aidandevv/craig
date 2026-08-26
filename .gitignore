@@ -1,0 +1,10 @@
+.env
+data/
+models/
+secrets/
+*.db
+*.sqlite
+apartment-hunter
+__pycache__/
+*.py[cod]
+.DS_Store

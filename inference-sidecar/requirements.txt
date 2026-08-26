@@ -1,0 +1,9 @@
+grpcio==1.68.1
+prometheus-client==0.21.0
+requests==2.32.3
+numpy==2.1.3
+Pillow==11.0.0
+pytest==8.3.4
+# Install onnxruntime when mounting an ONNX model. The service degrades safely
+# to an unavailable score if it is absent or the model cannot be loaded.
+onnxruntime==1.20.1

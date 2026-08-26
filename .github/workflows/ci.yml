@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+      - prod
+  pull_request:
+    branches:
+      - main
+      - staging
+      - prod
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: go test ./...
+      - run: pip install -r inference-sidecar/requirements.txt pytest && python -m pytest inference-sidecar
+      - run: docker compose config --quiet
+
+  lint:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/prod'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+      - name: Run Go linter
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+
+  build:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/prod'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+      - run: go build ./cmd/...
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: craig:${{ github.sha }}
+
+  staging-gate:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
+    needs: [test, lint, build]
+    steps:
+      - run: echo "✓ Staging gates passed - ready for deployment"
+
+  prod-gate:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/prod' && github.event_name == 'push'
+    needs: [test, lint, build]
+    steps:
+      - run: echo "✓ Production gates passed - ready for deployment"

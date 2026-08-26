@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="cards" aria-label="Today's summary">
+  <article><span>Seen today</span><strong>{{ stats.seen_today }}</strong></article>
+  <article><span>Qualified today</span><strong>{{ stats.qualified_today }}</strong></article>
+  <article><span>Average fraud risk</span><strong>{{ "%.0f"|format(stats.average_fraud_score * 100) }}%</strong></article>
+  <article><span>Cost today</span><strong>${{ "%.2f"|format(stats.cost_today) }}</strong></article>
+</section>
+<section class="panel">
+  <div class="panel-title"><h1>Qualified listings</h1><p>{{ listings|length }} shown</p></div>
+  {% if listings %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Listing</th><th>Price</th><th>Beds</th><th>Location</th><th>Fraud risk</th><th>Fit</th><th>Status</th></tr></thead>
+    <tbody>{% for listing in listings %}
+      <tr>
+        <td><a href="{{ url_for('detail', listing_id=listing.id) }}">{{ listing.title }}</a></td>
+        <td>${{ "{:,}".format(listing.price) }}</td>
+        <td>{{ listing.bedrooms if listing.bedrooms is not none else "—" }}</td>
+        <td>{{ listing.location or "—" }}</td>
+        <td><span class="risk {{ 'green' if listing.fraud_score <= 0.2 else 'yellow' }}">{{ "%.0f"|format(listing.fraud_score * 100) }}%</span></td>
+        <td>{{ "%.0f"|format((listing.fit_score or 0) * 100) }}%</td><td>{{ listing.status }}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<div class="empty"><h2>No qualified listings yet</h2><p>Once the poller evaluates new candidates, trustworthy matches appear here.</p></div>{% endif %}
+</section>
+{% endblock %}

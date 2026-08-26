@@ -1,0 +1,88 @@
+services:
+  fraud-service:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: sqlite:///data/apartments.db
+      INFERENCE_ADDRESS: inference-sidecar:50051
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    volumes:
+      - ./data:/app/data
+      - ./secrets:/run/secrets:ro
+    depends_on:
+      inference-sidecar:
+        condition: service_started
+    restart: unless-stopped
+
+  inference-sidecar:
+    build: ./inference-sidecar
+    environment:
+      CORE_API_URL: http://fraud-service:8080
+    volumes:
+      - ./models:/app/models:ro
+      - ./test-data:/app/test-data:ro
+    expose:
+      - "50051"
+      - "9091"
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./data/prometheus:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    depends_on:
+      - fraud-service
+      - inference-sidecar
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    ports:
+      - "3000:3000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-change-me-before-exposure}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./data/grafana:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  web-ui:
+    build: ./web
+    environment:
+      API_BASE_URL: http://fraud-service:8080
+      GRAFANA_URL: http://localhost:3000
+    ports:
+      - "5000:5000"
+    depends_on:
+      - fraud-service
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.8.4-alpine
+    profiles: [vps]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/caddy:/data
+    depends_on:
+      - grafana
+      - web-ui
+    restart: unless-stopped

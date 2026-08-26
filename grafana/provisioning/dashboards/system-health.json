@@ -1,0 +1,13 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "panels": [
+    {"type": "stat", "title": "Listings ingested", "targets": [{"expr": "sum(apartment_hunter_listings_ingested_total)"}], "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}},
+    {"type": "stat", "title": "Last successful poll", "targets": [{"expr": "apartment_hunter_last_flipify_poll_success_timestamp_seconds"}], "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0}},
+    {"type": "timeseries", "title": "Processed listings", "targets": [{"expr": "sum by (status) (rate(apartment_hunter_listings_processed_total[5m]))", "legendFormat": "{{status}}"}], "gridPos": {"h": 9, "w": 12, "x": 0, "y": 8}},
+    {"type": "timeseries", "title": "Evaluation latency (ms)", "targets": [{"expr": "histogram_quantile(0.95, sum(rate(apartment_hunter_total_evaluation_latency_ms_bucket[5m])) by (le))", "legendFormat": "p95"}], "gridPos": {"h": 9, "w": 12, "x": 12, "y": 8}}
+  ],
+  "schemaVersion": 39,
+  "title": "Apartment Hunter — System Health",
+  "version": 1
+}

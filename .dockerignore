@@ -1,0 +1,8 @@
+.git
+.env
+data
+secrets
+models
+__pycache__
+*.db
+apartment-hunter

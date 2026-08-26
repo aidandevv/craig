@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package inference;
+
+option go_package = "github.com/aidandevaney/apartment-hunter/pkg/protos/inference";
+
+service ImageClassifier {
+  rpc ClassifyAIGenerated(ClassifyRequest) returns (ClassifyResponse);
+}
+
+message ClassifyRequest {
+  string image_url = 1;
+  string image_path = 2;
+}
+
+message ClassifyResponse {
+  float ai_score = 1;
+  float confidence = 2;
+  int64 latency_ms = 3;
+  string error = 4;
+}
