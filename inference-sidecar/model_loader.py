@@ -6,9 +6,11 @@ from dataclasses import dataclass
 
 import io
 import os
+import socket
 import time
-from typing import Tuple
+from typing import Tuple, Union
 from urllib.parse import urlparse
+from ipaddress import ip_address, IPv4Address, IPv6Address
 
 import numpy as np
 import requests
@@ -69,13 +71,13 @@ class ImageModel:
         if not image_url:
             raise ValueError("image_url or image_path is required")
         ImageModel._validate_url(image_url)
-        response = requests.get(image_url, timeout=5)
+        response = requests.get(image_url, timeout=5, allow_redirects=False)
         response.raise_for_status()
         return Image.open(io.BytesIO(response.content)).convert("RGB")
 
     @staticmethod
     def _validate_url(url: str) -> None:
-        """Validate URL to prevent SSRF attacks."""
+        """Validate URL to prevent SSRF attacks including DNS rebinding."""
         try:
             parsed = urlparse(url)
         except (ValueError, InvalidURL):
@@ -88,15 +90,45 @@ class ImageModel:
         if not hostname:
             raise ValueError("URL missing hostname")
 
-        forbidden_ips = {"127.0.0.1", "localhost", "0.0.0.0"}
-        if hostname in forbidden_ips:
+        hostname_lower = hostname.lower()
+        if hostname_lower in ("localhost", "0.0.0.0", "127.0.0.1", "::1", "[::1]"):
             raise ValueError(f"Access to {hostname} not allowed")
 
-        if hostname.startswith(("10.", "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.", "192.168.", "169.254.")):
-            raise ValueError("Access to private IP ranges not allowed")
+        if hostname_lower.startswith("[") and hostname_lower.endswith("]"):
+            ipv6_str = hostname_lower[1:-1]
+            if ipv6_str in ("::1", "::"):
+                raise ValueError(f"Access to {hostname} not allowed")
 
-        if hostname.endswith((".local", ".internal")):
+        if hostname.endswith((".local", ".internal", ".localhost")):
             raise ValueError("Access to local domains not allowed")
+
+        try:
+            ip = ip_address(hostname)
+            ImageModel._check_ip_blocked(ip)
+        except ValueError:
+            try:
+                ips = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+                if not ips:
+                    raise ValueError("Hostname resolution returned no results")
+                for family, socktype, proto, canonname, sockaddr in ips:
+                    resolved_ip = ip_address(sockaddr[0])
+                    ImageModel._check_ip_blocked(resolved_ip)
+            except socket.gaierror as e:
+                raise ValueError(f"Failed to resolve hostname: {e}")
+
+    @staticmethod
+    def _check_ip_blocked(ip: Union[IPv4Address, IPv6Address]) -> None:
+        """Check if IP is in blocked ranges."""
+        if ip.is_loopback:
+            raise ValueError(f"Access to loopback addresses not allowed: {ip}")
+        if ip.is_private:
+            raise ValueError(f"Access to private IP ranges not allowed: {ip}")
+        if ip.is_link_local:
+            raise ValueError(f"Access to link-local addresses not allowed: {ip}")
+        if ip.is_reserved:
+            raise ValueError(f"Access to reserved addresses not allowed: {ip}")
+        if ip.is_multicast:
+            raise ValueError(f"Access to multicast addresses not allowed: {ip}")
 
     @staticmethod
     def _preprocess(image: Image.Image) -> np.ndarray:
