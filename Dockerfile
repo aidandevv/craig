@@ -1,0 +1,7 @@
+FROM golang:1.24-alpine AS build
+WORKDIR /src
+RUN apk add --no-cache build-base
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN go vet ./... && go test ./... && CGO_ENABLED=1 go build -trimpath ./...

@@ -1,0 +1,23 @@
+# Build output
+/bin/
+/out/
+*.test
+
+# Local runtime state
+/data/
+*.db
+*.db-shm
+*.db-wal
+
+# Secrets and local config
+.env
+config.yaml
+
+# Editor / OS noise
+.DS_Store
+.idea/
+.vscode/
+
+# Extension build artifacts
+extension/node_modules/
+extension/dist/
