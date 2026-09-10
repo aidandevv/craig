@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Craig Extension settings</title>
+    <style>
+      :root { color: #182230; background: #f5f7fa; font: 16px/1.5 system-ui, sans-serif; }
+      body { max-width: 680px; margin: 0 auto; padding: 48px 24px; }
+      main { padding: 30px; border: 1px solid #d7dce5; border-radius: 16px; background: white; box-shadow: 0 8px 24px rgba(24, 34, 48, .08); }
+      h1, h2 { margin-top: 0; } h2 { font-size: 22px; } label { display: block; margin-top: 20px; font-weight: 700; } input, select { box-sizing: border-box; display: block; width: 100%; margin-top: 6px; padding: 10px; border: 1px solid #9eabb9; border-radius: 8px; background: white; color: inherit; font: inherit; } .check { display: flex; gap: 9px; align-items: center; } .check input { width: auto; margin: 0; } button { margin: 24px 8px 0 0; padding: 10px 14px; border: 0; border-radius: 8px; background: #245b89; color: white; font: inherit; font-weight: 700; cursor: pointer; } button.secondary { background: #e8eef4; color: #233b54; } button.danger { background: #fff0ef; color: #a23632; } button:disabled { cursor: not-allowed; opacity: .55; } .status { min-height: 1.5em; margin-top: 16px; font-weight: 650; } .hint { color: #52606f; font-size: 14px; } code { padding: 1px 4px; border-radius: 4px; background: #eef1f4; } .rules { margin-top: 36px; padding-top: 30px; border-top: 1px solid #d7dce5; } .rule-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; } .rule-grid label { margin-top: 14px; } .rule-card { margin-top: 14px; padding: 18px; border: 1px solid #d7dce5; border-radius: 10px; background: #fbfcfe; } .rule-card h3 { margin: 0; font-size: 17px; } .rule-card p { margin: 6px 0; color: #52606f; } .rule-card .check { margin-top: 18px; } .rule-card button { margin-top: 18px; } .readonly { border-left: 4px solid #a9b6c4; } details { margin-top: 10px; } summary { cursor: pointer; color: #245b89; font-weight: 700; } pre { max-height: 260px; overflow: auto; padding: 12px; border-radius: 7px; background: #182230; color: #eaf0f6; font-size: 12px; white-space: pre-wrap; } .actions { display: flex; flex-wrap: wrap; gap: 8px; } .actions button { margin-right: 0; } @media (max-width: 560px) { body { padding: 20px 12px; } main { padding: 22px; } .rule-grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Craig Extension</h1>
+      <p>Analyze Craigslist listings against rules running on your own computer.</p>
+      <ol class="hint">
+        <li>Run <code>craig-extension config init</code> and then <code>craig-extension daemon</code>.</li>
+        <li>Copy the value from <code>craig-extension config token</code>.</li>
+        <li>Paste it below. It stays in this browser profile and is never sent to a listing page.</li>
+      </ol>
+      <form id="settings">
+        <label>Daemon URL <input id="daemon-url" name="daemon-url" type="url" required></label>
+        <label>Daemon token <input id="token" name="token" type="password" autocomplete="off" required></label>
+        <label class="check"><input id="auto-run" name="auto-run" type="checkbox"> Analyze automatically when a listing opens</label>
+        <button type="submit">Save settings</button>
+        <button id="test-connection" class="secondary" type="button">Test daemon</button>
+      </form>
+      <p id="settings-status" class="status" role="status" aria-live="polite"></p>
+
+      <section class="rules" aria-labelledby="rules-heading">
+        <h2 id="rules-heading">Rule builder</h2>
+        <p>Build clear preset-based text checks without editing YAML. Contact, image, custom-pattern, and regex rules stay read-only and are preserved when you save.</p>
+        <button id="load-rules" type="button">Load rules from daemon</button>
+        <p id="rules-status" class="status" role="status" aria-live="polite"></p>
+
+        <div id="rule-editor" hidden>
+          <form id="new-rule">
+            <h3>Add a preset pattern rule</h3>
+            <div class="rule-grid">
+              <label>Rule key <input id="new-rule-name" required pattern="[a-z][a-z0-9_]*" placeholder="e.g. suspicious_payment"></label>
+              <label>Suspicious pattern <select id="new-rule-preset"></select></label>
+              <label>Look in <select id="new-rule-scope"></select></label>
+              <label>Severity <select id="new-rule-severity"></select></label>
+            </div>
+            <button type="submit">Add rule</button>
+          </form>
+          <div id="rule-list"></div>
+          <div class="actions">
+            <button id="save-rules" type="button">Save all rules</button>
+            <button id="reload-rules" class="secondary" type="button">Discard changes and reload</button>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

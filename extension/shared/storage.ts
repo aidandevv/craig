@@ -1,0 +1,52 @@
+import { defaultSettings, type Settings } from "./types";
+
+// Chrome's callback and Promise extension APIs vary by browser/type package.
+// These wrappers keep the token-bearing local storage and non-secret session
+// cache explicit, while also surfacing storage failures to callers.
+export async function loadSettings(): Promise<Settings> {
+	const defaults: Record<string, unknown> = { ...defaultSettings };
+	const values = await get(chrome.storage.local, defaults);
+	return {
+		daemonUrl: typeof values.daemonUrl === "string" ? values.daemonUrl : defaultSettings.daemonUrl,
+		token: typeof values.token === "string" ? values.token : defaultSettings.token,
+		autoRun: typeof values.autoRun === "boolean" ? values.autoRun : defaultSettings.autoRun
+	};
+}
+
+export function saveSettings(settings: Settings): Promise<void> {
+	return set(chrome.storage.local, { ...settings });
+}
+
+export async function getSessionValue<T>(key: string): Promise<T | undefined> {
+	return (await get(chrome.storage.session, key))[key] as T | undefined;
+}
+
+export function setSessionValue(key: string, value: unknown): Promise<void> {
+	return set(chrome.storage.session, { [key]: value });
+}
+
+function get(area: chrome.storage.StorageArea, keys: string | Record<string, unknown>): Promise<Record<string, unknown>> {
+	return new Promise((resolve, reject) => {
+		area.get(keys, (items) => {
+			const error = chrome.runtime.lastError;
+			if (error) {
+				reject(new Error(error.message));
+				return;
+			}
+			resolve(items as Record<string, unknown>);
+		});
+	});
+}
+
+function set(area: chrome.storage.StorageArea, values: Record<string, unknown>): Promise<void> {
+	return new Promise((resolve, reject) => {
+		area.set(values, () => {
+			const error = chrome.runtime.lastError;
+			if (error) {
+				reject(new Error(error.message));
+				return;
+			}
+			resolve();
+		});
+	});
+}

@@ -1,0 +1,19 @@
+{
+  "name": "craig-extension-browser",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "npm run typecheck && node scripts/build.mjs",
+    "test": "node scripts/test.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.2.9",
+    "@types/jsdom": "30.0.0",
+    "@types/node": "22.20.2",
+    "esbuild": "0.28.2",
+    "jsdom": "26.1.0",
+    "typescript": "7.0.2"
+  }
+}

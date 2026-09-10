@@ -1,4 +1,4 @@
-.PHONY: test format tidy test-pkg build
+.PHONY: test format tidy test-pkg build extension-install extension-test extension-build
 
 HOST_GOOS := $(shell uname -s | tr '[:upper:]' '[:lower:]')
 HOST_GOARCH := $(shell uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
@@ -25,3 +25,12 @@ tidy:
 test-pkg:
 	docker run --rm -v "$(PWD):/src" -w /src golang:1.24-alpine \
 		sh -c 'apk add --no-cache build-base >/dev/null 2>&1 && go test $(PKG) -v'
+
+extension-install:
+	cd extension && npm ci
+
+extension-test:
+	cd extension && npm test
+
+extension-build:
+	cd extension && npm run build

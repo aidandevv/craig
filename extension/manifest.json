@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Craig Extension",
+  "version": "0.1.0",
+  "description": "Local-first, explainable scam indicators for Craigslist listings.",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "http://*.craigslist.org/*",
+    "https://*.craigslist.org/*"
+  ],
+  "background": {
+    "service_worker": "dist/background/worker.js"
+  },
+  "action": {
+    "default_title": "Analyze this Craigslist listing"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*.craigslist.org/*",
+        "https://*.craigslist.org/*"
+      ],
+      "js": ["dist/content/main.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "dist/options/index.html"
+}
