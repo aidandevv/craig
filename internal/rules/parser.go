@@ -137,6 +137,3 @@ func validateScope(scope string) error {
 	}
 	return fmt.Errorf("unknown scope %q (want title, description, caption or whole_post)", scope)
 }
-
-// knownCheck is completed in the contact_check task.
-func knownCheck(name string) bool { return name == "direct_phone_present" }
