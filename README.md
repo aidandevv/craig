@@ -7,9 +7,8 @@ and hands it to a daemon running on your own machine, which scores it against a
 rule set you control and explains every point of that score. Nothing is sent
 anywhere except the image-analysis calls you configure with your own API key.
 
-> Status: foundation only. The analysis primitives below are ported, tested, and
-> working. The rule engine, daemon, and extension are specified in
-> [docs/design.md](docs/design.md) and not yet built.
+> Status: Phase 1 complete. The offline rule engine and CLI are ready; the
+> daemon and Chrome extension remain planned in [docs/design.md](docs/design.md).
 
 ## Why it exists
 
@@ -41,9 +40,28 @@ only run when you ask.
 | `internal/detect` | `Detector` interface and concurrent fan-out across signals |
 | `internal/cache` | SQLite: image-signal results and the durable monthly API budget |
 | `internal/signals` | Google Vision reverse-image search and OCR watermark detection |
+| `internal/rules` | Embedded/user-defined YAML rules compiled into detectors |
+| `internal/risk` | Explainable score, band, coverage, and five result buckets |
+| `cmd/craig-extension` | Offline `analyze` command |
 
 No listing is ever persisted. The cache stores image-signal results keyed by a
 hash of the image URL, plus a ledger of API units spent this month.
+
+## Try it
+
+```sh
+make build
+./bin/craig-extension analyze --data '{
+  "title": "Beautiful 2BR - MUST GO TODAY",
+  "description": "I am out of the country. Send the deposit by western union to hold the unit.",
+  "contact": {"relay_only": true}
+}'
+```
+
+Use `--json` for machine-readable output. Pass a file through `--file` (or
+`--file -` for stdin), and use `--rules rules.yaml` to load a custom ruleset.
+The default rules work entirely offline; image rules are explicitly reported as
+`no_api_key` until Vision is configured in the daemon phase.
 
 ## Development
 
@@ -51,6 +69,7 @@ Go is not assumed on the host; everything runs in a container.
 
 ```sh
 make test     # vet + tests + build, via the Dockerfile build stage
+make build    # extract the CLI to ./bin/craig-extension
 make format   # gofmt
 make tidy     # go mod tidy
 ```

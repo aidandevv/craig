@@ -1,0 +1,126 @@
+package risk
+
+import (
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/aidandevv/craig-extension/internal/domain"
+	"github.com/aidandevv/craig-extension/internal/rules"
+)
+
+type Finding struct {
+	Rule   string  `json:"rule"`
+	Label  string  `json:"label"`
+	Detail string  `json:"detail,omitempty"`
+	Weight float64 `json:"weight,omitempty"`
+}
+type NotEvaluated struct {
+	Rule   string `json:"rule"`
+	Reason string `json:"reason"`
+}
+type Coverage struct {
+	Ran     int `json:"ran"`
+	Enabled int `json:"enabled"`
+}
+
+// Assessment is the complete, explained verdict on one listing.
+type Assessment struct {
+	RiskScore        float64        `json:"risk_score"`
+	RiskBand         string         `json:"risk_band"`
+	HardFlagged      bool           `json:"hard_flagged"`
+	Coverage         Coverage       `json:"coverage"`
+	HighRisk         []Finding      `json:"high_risk"`
+	PotentiallyRisky []Finding      `json:"potentially_risky"`
+	PositiveSignals  []Finding      `json:"positive_signals"`
+	PassedChecks     []string       `json:"passed_checks"`
+	NotEvaluated     []NotEvaluated `json:"not_evaluated"`
+	AnalysisTimeMS   int64          `json:"analysis_time_ms"`
+}
+
+// Assess places every enabled rule in exactly one bucket. In particular, it
+// never represents unavailable checks as passing; absence of evidence must not
+// be presented as evidence of safety.
+func Assess(results []domain.SignalResult, compiled rules.Compiled, elapsed time.Duration) Assessment {
+	score, band, hard := Score(results, compiled.Bands)
+	a := Assessment{RiskScore: score, RiskBand: band, HardFlagged: hard, AnalysisTimeMS: elapsed.Milliseconds()}
+	notEvaluated := make(map[string]string, len(compiled.Unavailable))
+	for rule, reason := range compiled.Unavailable {
+		notEvaluated[rule] = reason
+	}
+	passed := make(map[string]bool)
+
+	for _, result := range results {
+		covered := compiled.Coverage[result.Name]
+		if len(covered) == 0 {
+			continue
+		}
+		if result.Skipped != "" {
+			for _, rule := range covered {
+				notEvaluated[rule] = result.Skipped
+				delete(passed, rule)
+			}
+			continue
+		}
+		matched := make(map[string]bool, len(result.Flags))
+		for _, flag := range result.Flags {
+			matched[flag] = true
+		}
+		for _, rule := range covered {
+			delete(notEvaluated, rule)
+			if matched[rule] {
+				a.add(rule, compiled, detailFor(result, rule))
+				continue
+			}
+			passed[rule] = true
+		}
+	}
+
+	for rule := range passed {
+		if _, unavailable := notEvaluated[rule]; !unavailable {
+			a.PassedChecks = append(a.PassedChecks, rule)
+		}
+	}
+	sort.Strings(a.PassedChecks)
+	sort.Slice(a.HighRisk, func(i, j int) bool { return a.HighRisk[i].Rule < a.HighRisk[j].Rule })
+	sort.Slice(a.PotentiallyRisky, func(i, j int) bool { return a.PotentiallyRisky[i].Rule < a.PotentiallyRisky[j].Rule })
+	sort.Slice(a.PositiveSignals, func(i, j int) bool { return a.PositiveSignals[i].Rule < a.PositiveSignals[j].Rule })
+	names := make([]string, 0, len(notEvaluated))
+	for rule := range notEvaluated {
+		names = append(names, rule)
+	}
+	sort.Strings(names)
+	for _, rule := range names {
+		a.NotEvaluated = append(a.NotEvaluated, NotEvaluated{Rule: rule, Reason: notEvaluated[rule]})
+	}
+	a.Coverage = Coverage{Enabled: len(compiled.Rules), Ran: len(compiled.Rules) - len(a.NotEvaluated)}
+	return a
+}
+
+func (a *Assessment) add(name string, compiled rules.Compiled, detail string) {
+	rule := compiled.Rules[name]
+	finding := Finding{Rule: name, Label: label(name, rule), Detail: detail, Weight: compiled.Severities.WeightFor(rule)}
+	switch {
+	case rule.Severity == rules.SeverityGreen:
+		a.PositiveSignals = append(a.PositiveSignals, finding)
+	case rule.Severity == rules.SeverityRed || rule.Hard:
+		a.HighRisk = append(a.HighRisk, finding)
+	default:
+		a.PotentiallyRisky = append(a.PotentiallyRisky, finding)
+	}
+}
+func label(name string, rule rules.Rule) string {
+	if strings.TrimSpace(rule.Description) != "" {
+		return rule.Description
+	}
+	return name
+}
+func detailFor(result domain.SignalResult, rule string) string {
+	prefix := rule + ": "
+	for _, detail := range result.Details {
+		if strings.HasPrefix(detail, prefix) {
+			return strings.TrimPrefix(detail, prefix)
+		}
+	}
+	return ""
+}

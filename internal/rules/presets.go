@@ -13,6 +13,9 @@ import (
 //go:embed presets.yaml
 var presetsYAML []byte
 
+//go:embed default_rules.yaml
+var defaultRulesYAML []byte
+
 // Preset is a named group of patterns shipped with the binary. Presets use the
 // same machinery as custom rules, so a user can inspect one and fork it.
 type Preset struct {
@@ -48,4 +51,14 @@ func LookupPreset(name string) (Preset, error) {
 	}
 	sort.Strings(available)
 	return Preset{}, fmt.Errorf("unknown preset %q (available: %s)", name, strings.Join(available, ", "))
+}
+
+// DefaultRuleSet returns the embedded starter rules, allowing useful offline
+// analysis before a user has created a configuration file.
+func DefaultRuleSet() (RuleSet, error) {
+	set, err := Parse(defaultRulesYAML)
+	if err != nil {
+		return RuleSet{}, fmt.Errorf("embedded default rules: %w", err)
+	}
+	return set, nil
 }

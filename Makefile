@@ -1,8 +1,17 @@
-.PHONY: test format tidy test-pkg
+.PHONY: test format tidy test-pkg build
+
+HOST_GOOS := $(shell uname -s | tr '[:upper:]' '[:lower:]')
+HOST_GOARCH := $(shell uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
 
 # Go is not assumed on the host; everything runs in a container.
 test:
 	docker build --target build .
+
+build:
+	mkdir -p bin
+	docker run --rm -v "$(PWD):/src" -w /src \
+		-e CGO_ENABLED=0 -e GOOS=$(HOST_GOOS) -e GOARCH=$(HOST_GOARCH) \
+		golang:1.24-alpine go build -trimpath -ldflags='-s -w' -o bin/craig-extension ./cmd/craig-extension
 
 format:
 	docker run --rm -v "$(PWD):/src" -w /src golang:1.24-alpine \

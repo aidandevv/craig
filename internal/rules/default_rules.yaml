@@ -1,0 +1,87 @@
+# Default rule set shipped with the binary. Weights are contributions to a
+# score in [0,1]; image evidence is deliberately weighted most heavily.
+version: "1.0"
+
+severities:
+  red: 0.45
+  risk: 0.20
+  green: 0.0
+
+risk_bands:
+  caution: 0.30
+  elevated: 0.55
+  high: 0.75
+
+rules:
+  payment_no_recourse:
+    type: pattern_match
+    description: "Payment requested by a method with no recourse"
+    scope: whole_post
+    severity: red
+    hard: true
+    match: {preset: payment_no_recourse}
+  urgency_pressure:
+    type: pattern_match
+    description: "High-pressure language discouraging due diligence"
+    scope: whole_post
+    severity: risk
+    match: {preset: urgency_pressure}
+  absentee_landlord:
+    type: pattern_match
+    description: "Owner claims to be unreachable in person"
+    scope: whole_post
+    severity: red
+    match: {preset: absentee_landlord}
+  contact_evasion_phrases:
+    type: pattern_match
+    description: "Seller steering away from a verifiable channel"
+    scope: whole_post
+    severity: risk
+    match: {preset: contact_evasion_phrases}
+  deposit_before_viewing:
+    type: pattern_match
+    description: "Money requested before the renter has seen the property"
+    scope: whole_post
+    severity: red
+    match: {preset: deposit_before_viewing}
+  obfuscated_contact:
+    type: contact_check
+    description: "Contact details written to evade detection"
+    scope: whole_post
+    severity: risk
+    checks: [obfuscated_digits, spelled_out_digits, email_obfuscation]
+  relay_only_contact:
+    type: contact_check
+    description: "Seller reachable only through the marketplace"
+    scope: whole_post
+    severity: risk
+    checks: [relay_only, app_only]
+  direct_phone_listed:
+    type: contact_check
+    description: "Direct phone number provided"
+    scope: whole_post
+    severity: green
+    checks: [direct_phone_present]
+  reverse_image_real_estate:
+    type: image_analysis
+    description: "Listing photo also appears on a real-estate site"
+    method: reverse_search
+    severity: red
+    hard: true
+    weight: 0.60
+    flags_matching: [zillow, redfin, realtor, trulia, mls]
+  stock_photos:
+    type: image_analysis
+    description: "Listing photo is a stock image"
+    method: reverse_search
+    severity: risk
+    weight: 0.35
+    flags_matching: [shutterstock, istockphoto, unsplash, gettyimages, pexels]
+  mls_watermark:
+    type: image_analysis
+    description: "Listing photo carries an agency or MLS watermark"
+    method: ocr
+    severity: red
+    hard: true
+    weight: 0.30
+    text_matching: ["multiple listing service", "mls", "zillow", "redfin", "coldwell", "century 21"]
