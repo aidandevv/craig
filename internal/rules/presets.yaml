@@ -1,0 +1,53 @@
+# Curated pattern library. These are regular expressions, matched
+# case-insensitively against the text a rule's scope selects.
+#
+# Every pattern here must catch realistic scam phrasing without firing on
+# ordinary listing prose. Both properties are enforced by presets_test.go.
+
+payment_no_recourse:
+  description: "Payment methods with no buyer protection or reversal"
+  patterns:
+    - "western[ -]?union"
+    - "money ?gram"
+    - "gift ?cards?"
+    - "wire (?:the )?(?:deposit|money|funds|payment)"
+    - "zelle only"
+    - "(?:bitcoin|btc|crypto|usdt) (?:only|payment|transfer)"
+    - "cash ?app only"
+
+urgency_pressure:
+  description: "High-pressure tactics that discourage due diligence"
+  patterns:
+    - "must (?:go|rent|sell|be gone) today"
+    - "first come,? first served"
+    - "act (?:now|fast|today)"
+    - "last chance"
+    - "several (?:people|others) (?:are )?interested"
+    - "won'?t last"
+
+absentee_landlord:
+  description: "Owner claims to be unreachable in person, a precondition for most rental scams"
+  patterns:
+    - "out of (?:the )?(?:country|state|town)"
+    - "currently (?:abroad|overseas)"
+    - "sight[ -]unseen"
+    - "(?:ship|mail|fedex|courier) (?:the |you the )?keys"
+    - "missionary (?:work|trip)"
+    - "cannot (?:show|meet) in person"
+
+contact_evasion_phrases:
+  description: "Seller steering away from any verifiable channel"
+  patterns:
+    - "e-?mail only"
+    - "no (?:phone )?calls?(?: please)?"
+    - "do not call"
+    - "text only, no calls"
+    - "contact me (?:only )?(?:through|via) (?:the )?app"
+
+deposit_before_viewing:
+  description: "Money requested before the renter has seen the property"
+  patterns:
+    - "deposit (?:to|and) (?:hold|secure|reserve)"
+    - "(?:hold|secure|reserve) (?:the )?(?:unit|apartment|place) with"
+    - "deposit before (?:you )?(?:view|see|visit)"
+    - "send (?:the )?(?:deposit|money) (?:first|up ?front)"
