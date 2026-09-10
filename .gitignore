@@ -18,6 +18,10 @@ config.yaml
 .idea/
 .vscode/
 
+# Local assistant state (session logs, worktrees) — machine-local,
+# not project source.
+.claude/
+
 # Extension build artifacts
 extension/node_modules/
 extension/dist/
