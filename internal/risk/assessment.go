@@ -10,10 +10,20 @@ import (
 )
 
 type Finding struct {
-	Rule   string  `json:"rule"`
-	Label  string  `json:"label"`
-	Detail string  `json:"detail,omitempty"`
-	Weight float64 `json:"weight,omitempty"`
+	Rule         string               `json:"rule"`
+	Label        string               `json:"label"`
+	Detail       string               `json:"detail,omitempty"`
+	Weight       float64              `json:"weight,omitempty"`
+	ImageMatches []ImageMatchEvidence `json:"image_matches,omitempty"`
+}
+
+// ImageMatchEvidence is safe-to-render provenance for a reverse-image
+// finding. The detector-only rule name is intentionally omitted at this API
+// boundary because the finding already identifies its rule.
+type ImageMatchEvidence struct {
+	ListingImageURL string `json:"listing_image_url"`
+	SourcePageURL   string `json:"source_page_url"`
+	SourceImageURL  string `json:"source_image_url,omitempty"`
 }
 type NotEvaluated struct {
 	Rule   string `json:"rule"`
@@ -43,7 +53,21 @@ type Assessment struct {
 // be presented as evidence of safety.
 func Assess(results []domain.SignalResult, compiled rules.Compiled, elapsed time.Duration) Assessment {
 	score, band, hard := Score(results, compiled.Bands)
-	a := Assessment{RiskScore: score, RiskBand: band, HardFlagged: hard, AnalysisTimeMS: elapsed.Milliseconds()}
+	// Keep the JSON boundary stable for browser clients: nil Go slices encode as
+	// null, while an assessment group is always conceptually a list (possibly
+	// empty). Initializing every group avoids forcing clients to special-case
+	// otherwise successful assessment responses.
+	a := Assessment{
+		RiskScore:        score,
+		RiskBand:         band,
+		HardFlagged:      hard,
+		HighRisk:         []Finding{},
+		PotentiallyRisky: []Finding{},
+		PositiveSignals:  []Finding{},
+		PassedChecks:     []string{},
+		NotEvaluated:     []NotEvaluated{},
+		AnalysisTimeMS:   elapsed.Milliseconds(),
+	}
 	notEvaluated := make(map[string]string, len(compiled.Unavailable))
 	for rule, reason := range compiled.Unavailable {
 		notEvaluated[rule] = reason
@@ -69,7 +93,7 @@ func Assess(results []domain.SignalResult, compiled rules.Compiled, elapsed time
 		for _, rule := range covered {
 			delete(notEvaluated, rule)
 			if matched[rule] {
-				a.add(rule, compiled, detailFor(result, rule))
+				a.add(rule, compiled, detailFor(result, rule), imageMatchesFor(result, rule))
 				continue
 			}
 			passed[rule] = true
@@ -97,9 +121,9 @@ func Assess(results []domain.SignalResult, compiled rules.Compiled, elapsed time
 	return a
 }
 
-func (a *Assessment) add(name string, compiled rules.Compiled, detail string) {
+func (a *Assessment) add(name string, compiled rules.Compiled, detail string, imageMatches []ImageMatchEvidence) {
 	rule := compiled.Rules[name]
-	finding := Finding{Rule: name, Label: label(name, rule), Detail: detail, Weight: compiled.Severities.WeightFor(rule)}
+	finding := Finding{Rule: name, Label: label(name, rule), Detail: detail, Weight: compiled.Severities.WeightFor(rule), ImageMatches: imageMatches}
 	switch {
 	case rule.Severity == rules.SeverityGreen:
 		a.PositiveSignals = append(a.PositiveSignals, finding)
@@ -108,6 +132,27 @@ func (a *Assessment) add(name string, compiled rules.Compiled, detail string) {
 	default:
 		a.PotentiallyRisky = append(a.PotentiallyRisky, finding)
 	}
+}
+
+func imageMatchesFor(result domain.SignalResult, rule string) []ImageMatchEvidence {
+	seen := map[string]bool{}
+	matches := []ImageMatchEvidence{}
+	for _, match := range result.ImageMatches {
+		if match.Rule != rule || match.ListingImageURL == "" || match.SourcePageURL == "" {
+			continue
+		}
+		key := match.ListingImageURL + "\x00" + match.SourcePageURL + "\x00" + match.SourceImageURL
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		matches = append(matches, ImageMatchEvidence{
+			ListingImageURL: match.ListingImageURL,
+			SourcePageURL:   match.SourcePageURL,
+			SourceImageURL:  match.SourceImageURL,
+		})
+	}
+	return matches
 }
 func label(name string, rule rules.Rule) string {
 	if strings.TrimSpace(rule.Description) != "" {

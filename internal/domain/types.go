@@ -47,11 +47,22 @@ const (
 // Flags carry the names of the rules that matched, which is how a detector that
 // evaluates several rules in one pass attributes its findings back to them.
 type SignalResult struct {
-	Name      string   `json:"name"`
-	Risk      float64  `json:"risk"`
-	Flags     []string `json:"flags,omitempty"`
-	Hard      bool     `json:"hard"`
-	Details   []string `json:"details,omitempty"`
-	Skipped   string   `json:"skipped,omitempty"`
-	LatencyMS int64    `json:"latency_ms"`
+	Name         string               `json:"name"`
+	Risk         float64              `json:"risk"`
+	Flags        []string             `json:"flags,omitempty"`
+	Hard         bool                 `json:"hard"`
+	Details      []string             `json:"details,omitempty"`
+	ImageMatches []ImageMatchEvidence `json:"image_matches,omitempty"`
+	Skipped      string               `json:"skipped,omitempty"`
+	LatencyMS    int64                `json:"latency_ms"`
+}
+
+// ImageMatchEvidence is a provider-returned reverse-image match attributed to
+// one rule. It is kept on the signal result so cached Vision responses retain
+// the evidence needed to explain a later assessment.
+type ImageMatchEvidence struct {
+	Rule            string `json:"rule"`
+	ListingImageURL string `json:"listing_image_url"`
+	SourcePageURL   string `json:"source_page_url"`
+	SourceImageURL  string `json:"source_image_url,omitempty"`
 }

@@ -1,0 +1,8 @@
+/.git/
+/.claude/
+/bin/
+/out/
+/data/
+/extension/node_modules/
+/extension/dist/
+/extension/.test-dist/

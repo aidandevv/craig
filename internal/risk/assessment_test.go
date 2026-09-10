@@ -66,9 +66,12 @@ func TestAssessHardAndSharedDetectorBehavior(t *testing.T) {
 	c.Coverage["reverse_image"] = []string{"reverse_image_real_estate", "stock_photos"}
 	delete(c.Unavailable, "reverse_image_real_estate")
 	delete(c.Unavailable, "stock_photos")
-	got := Assess([]domain.SignalResult{{Name: "reverse_image", Risk: .60, Hard: true, Flags: []string{"reverse_image_real_estate"}, Details: []string{`reverse_image_real_estate: matched "zillow"`}}}, c, 0)
+	got := Assess([]domain.SignalResult{{Name: "reverse_image", Risk: .60, Hard: true, Flags: []string{"reverse_image_real_estate"}, Details: []string{`reverse_image_real_estate: matched "zillow"`}, ImageMatches: []domain.ImageMatchEvidence{{Rule: "reverse_image_real_estate", ListingImageURL: "https://images.example/listing.jpg", SourcePageURL: "https://zillow.example/home", SourceImageURL: "https://zillow.example/photo.jpg"}}}}, c, 0)
 	if got.RiskBand != BandHigh || !got.HardFlagged || len(got.HighRisk) != 1 || got.HighRisk[0].Rule != "reverse_image_real_estate" || !sameStrings(got.PassedChecks, []string{"stock_photos"}) {
 		t.Errorf("assessment = %+v", got)
+	}
+	if matches := got.HighRisk[0].ImageMatches; len(matches) != 1 || matches[0].SourcePageURL != "https://zillow.example/home" {
+		t.Errorf("image evidence = %+v", matches)
 	}
 }
 

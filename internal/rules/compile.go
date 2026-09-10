@@ -38,8 +38,9 @@ type MatchSpec struct {
 type factory func(name string, r Rule, weight float64) (detect.Detector, error)
 
 var registry = map[string]factory{
-	TypePatternMatch: newPatternMatch,
-	TypeContactCheck: newContactCheck,
+	TypePatternMatch:        newPatternMatch,
+	TypeContactCheck:        newContactCheck,
+	TypeApplicationFeeCheck: newApplicationFeeCheck,
 }
 
 // Compile turns a validated rule set into detectors. Rules are processed in

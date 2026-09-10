@@ -92,6 +92,27 @@ func TestParseRejectsInvalidRuleSets(t *testing.T) {
 			yaml:      replaceLine(minimalValid, `version: "1.0"`, `version: ""`),
 			wantInErr: "version",
 		},
+		{
+			name: "application fee check must be caution-only",
+			yaml: minimalValid + `
+  application_fee_details:
+    type: application_fee_check
+    scope: whole_post
+    severity: red
+    application_fee_high_threshold: 100
+`,
+			wantInErr: "application_fee_check must use risk severity",
+		},
+		{
+			name: "application fee check needs a threshold",
+			yaml: minimalValid + `
+  application_fee_details:
+    type: application_fee_check
+    scope: whole_post
+    severity: risk
+`,
+			wantInErr: "application_fee_high_threshold",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

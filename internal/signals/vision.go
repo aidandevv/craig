@@ -22,6 +22,7 @@ import (
 	"github.com/aidandevv/craig-extension/internal/cache"
 	"github.com/aidandevv/craig-extension/internal/detect"
 	"github.com/aidandevv/craig-extension/internal/domain"
+	"github.com/aidandevv/craig-extension/internal/trace"
 )
 
 // Vision bills each feature separately, so each carries its own budget line.
@@ -151,44 +152,154 @@ func apply(name string, groups []MatchGroup, haystack string) domain.SignalResul
 	return result
 }
 
-// call performs the shared cache-check, budget-reserve, request cycle. It
-// returns a skipped result when the signal cannot run, which the caller passes
-// through unchanged rather than treating as a clean pass.
-func (v *Vision) call(ctx context.Context, name, feature string, listing domain.Listing) (domain.SignalResult, string, bool) {
+type imageOutcome struct {
+	index  int
+	result domain.SignalResult
+}
+
+// evaluateImages runs one Vision feature against every listing image. Cache
+// hits retain their original per-image result; newly processed images each
+// reserve one unit because Vision bills per feature per image. A signal is
+// skipped only when no image could be evaluated, so a provider failure on one
+// photo cannot erase evidence found in another.
+func (v *Vision) evaluateImages(
+	ctx context.Context,
+	name, feature string, requireImageEvidence bool,
+	groups []MatchGroup,
+	listing domain.Listing,
+	evaluate func(context.Context, string, int, int) (domain.SignalResult, error),
+) (domain.SignalResult, error) {
 	if len(listing.Images) == 0 {
-		return domain.SignalResult{Name: name, Skipped: domain.SkipNoImages}, "", false
+		trace.Log(ctx, "vision", "%s skipped: listing has no images", name)
+		return domain.SignalResult{Name: name, Skipped: domain.SkipNoImages}, nil
 	}
 	if !v.enabled {
-		return domain.SignalResult{Name: name, Skipped: domain.SkipNoAPIKey}, "", false
-	}
-	imageURL := listing.Images[0]
-	if err := validateImageURL(imageURL); err != nil {
-		return domain.SignalResult{
-			Name:    name,
-			Skipped: domain.SkipMissingField,
-			Details: []string{err.Error()},
-		}, "", false
+		trace.Log(ctx, "vision", "%s skipped: Google Vision credentials are not configured", name)
+		return domain.SignalResult{Name: name, Skipped: domain.SkipNoAPIKey}, nil
 	}
 
-	hash := hashURL(imageURL)
-	if cached, found, err := v.store.Get(ctx, hash, name); err == nil && found {
-		return cached, hash, false
-	}
+	total := len(listing.Images)
+	trace.Log(ctx, "vision", "%s will inspect %d listing image(s) with %s", name, total, feature)
+	outcomes := make([]imageOutcome, 0, total)
+	for index, imageURL := range listing.Images {
+		position := index + 1
+		if err := validateImageURL(imageURL); err != nil {
+			trace.Log(ctx, "vision", "%s image %d/%d skipped: %s", name, position, total, err)
+			outcomes = append(outcomes, imageOutcome{index: position, result: domain.SignalResult{Name: name, Skipped: domain.SkipMissingField}})
+			continue
+		}
 
-	allowed, err := v.store.ReserveVisionUnit(ctx, feature, v.cap)
-	if err != nil {
-		return domain.SignalResult{
-			Name:    name,
-			Skipped: domain.SkipProviderError,
-			Details: []string{err.Error()},
-		}, hash, false
+		hash := hashURL(imageURL)
+		if cached, found, err := v.store.Get(ctx, hash, name); err == nil && found {
+			// Reverse-image cache entries written before source provenance existed
+			// cannot power the image-pair UI. Refresh only old positive entries;
+			// clean cached checks remain free and a current evidence record stays
+			// fully cacheable.
+			if !requireImageEvidence || len(cached.Flags) == 0 || len(cached.ImageMatches) > 0 {
+				trace.Log(ctx, "vision", "%s image %d/%d: cache hit", name, position, total)
+				outcomes = append(outcomes, imageOutcome{index: position, result: cached})
+				continue
+			}
+			trace.Log(ctx, "vision", "%s image %d/%d: cached match lacks source evidence; refreshing", name, position, total)
+		} else if err != nil {
+			trace.Log(ctx, "vision", "%s image %d/%d: cache read failed; continuing", name, position, total)
+		}
+
+		allowed, err := v.store.ReserveVisionUnit(ctx, feature, v.cap)
+		if err != nil {
+			trace.Log(ctx, "vision", "%s image %d/%d skipped: could not reserve Vision budget", name, position, total)
+			outcomes = append(outcomes, imageOutcome{index: position, result: domain.SignalResult{Name: name, Skipped: domain.SkipProviderError}})
+			continue
+		}
+		if !allowed {
+			v.meter.VisionUnitSkipped(feature)
+			trace.Log(ctx, "vision", "%s image %d/%d skipped: monthly %s budget exhausted", name, position, total, feature)
+			outcomes = append(outcomes, imageOutcome{index: position, result: domain.SignalResult{Name: name, Skipped: domain.SkipBudgetExhausted}})
+			continue
+		}
+
+		v.meter.VisionUnitUsed(feature)
+		trace.Log(ctx, "vision", "%s image %d/%d: calling Google Vision %s", name, position, total, feature)
+		result, err := evaluate(ctx, imageURL, position, total)
+		if err != nil {
+			trace.Log(ctx, "vision", "%s image %d/%d skipped: provider error", name, position, total)
+			outcomes = append(outcomes, imageOutcome{index: position, result: domain.SignalResult{Name: name, Skipped: domain.SkipProviderError}})
+			continue
+		}
+		result.Name = name
+		if err := v.store.Put(ctx, hash, name, result); err != nil {
+			trace.Log(ctx, "vision", "%s image %d/%d: result not cached", name, position, total)
+		}
+		outcomes = append(outcomes, imageOutcome{index: position, result: result})
 	}
-	if !allowed {
-		v.meter.VisionUnitSkipped(feature)
-		return domain.SignalResult{Name: name, Skipped: domain.SkipBudgetExhausted}, hash, false
+	return mergeImageOutcomes(name, groups, outcomes), nil
+}
+
+func mergeImageOutcomes(name string, groups []MatchGroup, outcomes []imageOutcome) domain.SignalResult {
+	weights := make(map[string]MatchGroup, len(groups))
+	for _, group := range groups {
+		weights[group.Rule] = group
 	}
-	v.meter.VisionUnitUsed(feature)
-	return domain.SignalResult{Name: name}, hash, true
+	merged := domain.SignalResult{Name: name}
+	matched := make(map[string]bool)
+	seenEvidence := make(map[string]bool)
+	evaluated := 0
+	firstSkip := ""
+	for _, outcome := range outcomes {
+		result := outcome.result
+		if result.Skipped != "" {
+			if firstSkip == "" {
+				firstSkip = result.Skipped
+			}
+			continue
+		}
+		evaluated++
+		for _, rule := range result.Flags {
+			for _, match := range result.ImageMatches {
+				if match.Rule != rule {
+					continue
+				}
+				key := match.Rule + "\x00" + match.ListingImageURL + "\x00" + match.SourcePageURL + "\x00" + match.SourceImageURL
+				if !seenEvidence[key] {
+					seenEvidence[key] = true
+					merged.ImageMatches = append(merged.ImageMatches, match)
+				}
+			}
+			if matched[rule] {
+				continue
+			}
+			matched[rule] = true
+			group, known := weights[rule]
+			if known {
+				merged.Risk += group.Weight
+				merged.Hard = merged.Hard || group.Hard
+			}
+			merged.Flags = append(merged.Flags, rule)
+			detail := detailForRule(result, rule)
+			if detail == "" {
+				detail = "matched"
+			}
+			merged.Details = append(merged.Details, fmt.Sprintf("%s: image %d — %s", rule, outcome.index, detail))
+		}
+	}
+	if evaluated == 0 {
+		merged.Skipped = firstSkip
+		if merged.Skipped == "" {
+			merged.Skipped = domain.SkipProviderError
+		}
+	}
+	merged.Risk = detect.Clamp(merged.Risk)
+	return merged
+}
+
+func detailForRule(result domain.SignalResult, rule string) string {
+	prefix := rule + ": "
+	for _, detail := range result.Details {
+		if strings.HasPrefix(detail, prefix) {
+			return strings.TrimPrefix(detail, prefix)
+		}
+	}
+	return ""
 }
 
 func (v *Vision) annotate(ctx context.Context, imageURL, feature string) (map[string]any, error) {

@@ -69,6 +69,29 @@ func TestReverseImageFlagsRealEstateMatchAsHard(t *testing.T) {
 	if len(got.Flags) != 1 || got.Flags[0] != "reverse_image_real_estate" {
 		t.Errorf("got flags %v, want the owning rule name", got.Flags)
 	}
+	if len(got.ImageMatches) != 1 || got.ImageMatches[0].ListingImageURL != "https://images.example.com/a.jpg" || got.ImageMatches[0].SourcePageURL != "https://www.zillow.com/homedetails/123" {
+		t.Errorf("image evidence = %+v", got.ImageMatches)
+	}
+}
+
+func TestReverseImageCarriesMatchingImagePreviewWhenVisionSuppliesOne(t *testing.T) {
+	body, _ := json.Marshal(map[string]any{"responses": []any{
+		map[string]any{"webDetection": map[string]any{
+			"pagesWithMatchingImages": []any{map[string]any{"url": "https://www.zillow.com/homedetails/123"}},
+			"fullMatchingImages":      []any{map[string]any{"url": "https://photos.zillowstatic.com/match.jpg"}},
+		}},
+	}})
+	vision, _ := newVision(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(body)
+	}, 100)
+
+	got, err := NewReverseImage(vision, ReverseImageOptions{Groups: realEstateGroups}).Evaluate(context.Background(), listingWithImage())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.ImageMatches) != 1 || got.ImageMatches[0].SourceImageURL != "https://photos.zillowstatic.com/match.jpg" {
+		t.Errorf("image evidence = %+v", got.ImageMatches)
+	}
 }
 
 // One API call must serve every reverse-search rule; two matches sum.
@@ -124,6 +147,49 @@ func TestReverseImageSecondCallIsServedFromCache(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Errorf("made %d provider calls for the same image, want 1", got)
+	}
+}
+
+func TestReverseImageInspectsEveryListingImageAndOnlyScoresEachRuleOnce(t *testing.T) {
+	var calls int32
+	vision, _ := newVision(t, func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		var request struct {
+			Requests []struct {
+				Image struct {
+					Source struct {
+						ImageURI string `json:"imageUri"`
+					} `json:"source"`
+				} `json:"image"`
+			} `json:"requests"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if request.Requests[0].Image.Source.ImageURI == "https://images.example.com/b.jpg" {
+			_, _ = w.Write([]byte(webDetectionBody("https://www.zillow.com/homedetails/123")))
+			return
+		}
+		_, _ = w.Write([]byte(webDetectionBody()))
+	}, 100)
+
+	got, err := NewReverseImage(vision, ReverseImageOptions{Groups: realEstateGroups}).Evaluate(context.Background(), domain.Listing{
+		Images: []string{"https://images.example.com/a.jpg", "https://images.example.com/b.jpg"},
+	})
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	if calls := atomic.LoadInt32(&calls); calls != 2 {
+		t.Errorf("Vision calls = %d, want one for each image", calls)
+	}
+	if got.Risk != 0.60 || !got.Hard || len(got.Flags) != 1 || got.Flags[0] != "reverse_image_real_estate" {
+		t.Errorf("combined result = %+v", got)
+	}
+	if len(got.Details) != 1 || got.Details[0] != `reverse_image_real_estate: image 2 — matched "zillow"` {
+		t.Errorf("details = %v", got.Details)
+	}
+	if len(got.ImageMatches) != 1 || got.ImageMatches[0].ListingImageURL != "https://images.example.com/b.jpg" {
+		t.Errorf("image evidence = %+v", got.ImageMatches)
 	}
 }
 
@@ -230,6 +296,48 @@ func TestOCRFlagsWatermark(t *testing.T) {
 	}
 	if len(got.Flags) != 1 || got.Flags[0] != "mls_watermark" {
 		t.Errorf("got flags %v, want [mls_watermark]", got.Flags)
+	}
+}
+
+func TestOCRInspectsEveryListingImage(t *testing.T) {
+	var calls int32
+	vision, _ := newVision(t, func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		var request struct {
+			Requests []struct {
+				Image struct {
+					Source struct {
+						ImageURI string `json:"imageUri"`
+					} `json:"source"`
+				} `json:"image"`
+			} `json:"requests"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		text := "no watermark"
+		if request.Requests[0].Image.Source.ImageURI == "https://images.example.com/b.jpg" {
+			text = "Multiple Listing Service"
+		}
+		body, _ := json.Marshal(map[string]any{"responses": []any{
+			map[string]any{"fullTextAnnotation": map[string]any{"text": text}},
+		}})
+		_, _ = w.Write(body)
+	}, 100)
+
+	got, err := NewOCR(vision, OCROptions{Groups: []MatchGroup{
+		{Rule: "mls_watermark", Tokens: []string{"multiple listing service"}, Weight: 0.30, Hard: true},
+	}}).Evaluate(context.Background(), domain.Listing{Images: []string{
+		"https://images.example.com/a.jpg", "https://images.example.com/b.jpg",
+	}})
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	if calls := atomic.LoadInt32(&calls); calls != 2 {
+		t.Errorf("Vision calls = %d, want one for each image", calls)
+	}
+	if got.Risk != 0.30 || !got.Hard || len(got.Flags) != 1 || got.Flags[0] != "mls_watermark" {
+		t.Errorf("combined result = %+v", got)
 	}
 }
 

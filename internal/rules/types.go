@@ -8,9 +8,10 @@ package rules
 
 // Rule types.
 const (
-	TypePatternMatch  = "pattern_match"
-	TypeContactCheck  = "contact_check"
-	TypeImageAnalysis = "image_analysis"
+	TypePatternMatch        = "pattern_match"
+	TypeContactCheck        = "contact_check"
+	TypeImageAnalysis       = "image_analysis"
+	TypeApplicationFeeCheck = "application_fee_check"
 )
 
 // Scopes select which listing text a rule reads.
@@ -37,17 +38,17 @@ const (
 
 // RuleSet is a parsed rules.yaml.
 type RuleSet struct {
-	Version    string          `yaml:"version"`
-	Severities Severities      `yaml:"severities"`
-	RiskBands  RiskBands       `yaml:"risk_bands"`
-	Rules      map[string]Rule `yaml:"rules"`
+	Version    string          `yaml:"version" json:"version"`
+	Severities Severities      `yaml:"severities" json:"severities"`
+	RiskBands  RiskBands       `yaml:"risk_bands" json:"risk_bands"`
+	Rules      map[string]Rule `yaml:"rules" json:"rules"`
 }
 
 // Severities maps a severity tier to the weight a matching rule contributes.
 type Severities struct {
-	Red   float64 `yaml:"red"`
-	Risk  float64 `yaml:"risk"`
-	Green float64 `yaml:"green"`
+	Red   float64 `yaml:"red" json:"red"`
+	Risk  float64 `yaml:"risk" json:"risk"`
+	Green float64 `yaml:"green" json:"green"`
 }
 
 // WeightFor resolves a rule's contribution: an explicit weight wins, otherwise
@@ -71,37 +72,40 @@ func (s Severities) WeightFor(r Rule) float64 {
 
 // RiskBands are the lower bounds of each band above "low".
 type RiskBands struct {
-	Caution  float64 `yaml:"caution"`
-	Elevated float64 `yaml:"elevated"`
-	High     float64 `yaml:"high"`
+	Caution  float64 `yaml:"caution" json:"caution"`
+	Elevated float64 `yaml:"elevated" json:"elevated"`
+	High     float64 `yaml:"high" json:"high"`
 }
 
 // Rule is one check. Fields are grouped by the type that uses them; a field
 // belonging to another type is a validation error, not silently ignored.
 type Rule struct {
-	Type        string `yaml:"type"`
-	Severity    string `yaml:"severity"`
-	Description string `yaml:"description"`
+	Type        string `yaml:"type" json:"type"`
+	Severity    string `yaml:"severity" json:"severity"`
+	Description string `yaml:"description" json:"description,omitempty"`
 
-	Enabled *bool    `yaml:"enabled"` // nil means enabled
-	Weight  *float64 `yaml:"weight"`  // nil means use the severity default
-	Hard    bool     `yaml:"hard"`
+	Enabled *bool    `yaml:"enabled" json:"enabled,omitempty"` // nil means enabled
+	Weight  *float64 `yaml:"weight" json:"weight,omitempty"`   // nil means use the severity default
+	Hard    bool     `yaml:"hard" json:"hard,omitempty"`
 
-	// pattern_match and contact_check
-	Scope           string `yaml:"scope"`
-	CaseInsensitive *bool  `yaml:"case_insensitive"` // nil means true
+	// pattern_match, contact_check, and application_fee_check
+	Scope           string `yaml:"scope" json:"scope,omitempty"`
+	CaseInsensitive *bool  `yaml:"case_insensitive" json:"case_insensitive,omitempty"` // nil means true
 
 	// pattern_match
-	Match Match `yaml:"match"`
+	Match Match `yaml:"match" json:"match,omitempty"`
 
 	// contact_check
-	Checks     []string `yaml:"checks"`
-	RequireAll bool     `yaml:"require_all"`
+	Checks     []string `yaml:"checks" json:"checks,omitempty"`
+	RequireAll bool     `yaml:"require_all" json:"require_all,omitempty"`
 
 	// image_analysis
-	Method        string   `yaml:"method"`
-	FlagsMatching []string `yaml:"flags_matching"`
-	TextMatching  []string `yaml:"text_matching"`
+	Method        string   `yaml:"method" json:"method,omitempty"`
+	FlagsMatching []string `yaml:"flags_matching" json:"flags_matching,omitempty"`
+	TextMatching  []string `yaml:"text_matching" json:"text_matching,omitempty"`
+
+	// application_fee_check
+	ApplicationFeeHighThreshold float64 `yaml:"application_fee_high_threshold" json:"application_fee_high_threshold,omitempty"`
 }
 
 // IsEnabled reports whether the rule runs. Rules are enabled unless disabled.
@@ -113,7 +117,7 @@ func (r Rule) Insensitive() bool { return r.CaseInsensitive == nil || *r.CaseIns
 // Match is a pattern_match rule's source of patterns: exactly one of a curated
 // preset or a user-supplied list.
 type Match struct {
-	Preset string   `yaml:"preset"`
-	Custom []string `yaml:"custom"`
-	Regex  bool     `yaml:"regex"` // custom patterns only; presets are always regex
+	Preset string   `yaml:"preset" json:"preset,omitempty"`
+	Custom []string `yaml:"custom" json:"custom,omitempty"`
+	Regex  bool     `yaml:"regex" json:"regex,omitempty"` // custom patterns only; presets are always regex
 }

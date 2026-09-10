@@ -19,9 +19,14 @@ var defaultRulesYAML []byte
 // Preset is a named group of patterns shipped with the binary. Presets use the
 // same machinery as custom rules, so a user can inspect one and fork it.
 type Preset struct {
-	Description string   `yaml:"description"`
-	Patterns    []string `yaml:"patterns"`
+	Description string   `yaml:"description" json:"description"`
+	Patterns    []string `yaml:"patterns" json:"patterns"`
 }
+
+// DefaultRulesYAML returns a copy of the embedded starter rules. Configuration
+// initialization uses it to create the first editable rules.yaml without
+// making a user copy content from the binary or documentation.
+func DefaultRulesYAML() []byte { return append([]byte(nil), defaultRulesYAML...) }
 
 var (
 	presetsOnce sync.Once
@@ -61,4 +66,26 @@ func DefaultRuleSet() (RuleSet, error) {
 		return RuleSet{}, fmt.Errorf("embedded default rules: %w", err)
 	}
 	return set, nil
+}
+
+// MigrateApplicationFeeRule adds the newly shipped fee-risk rule to an older
+// user rules file when that key is absent. It does not overwrite an existing
+// rule (including one deliberately disabled by the user), so custom policy is
+// preserved across binary upgrades.
+func MigrateApplicationFeeRule(set *RuleSet) (bool, error) {
+	if set == nil {
+		return false, fmt.Errorf("rules: cannot migrate a nil rule set")
+	}
+	if _, exists := set.Rules["application_fee_details"]; exists {
+		return false, nil
+	}
+	defaults, err := DefaultRuleSet()
+	if err != nil {
+		return false, err
+	}
+	if set.Rules == nil {
+		set.Rules = map[string]Rule{}
+	}
+	set.Rules["application_fee_details"] = defaults.Rules["application_fee_details"]
+	return true, nil
 }

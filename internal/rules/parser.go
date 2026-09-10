@@ -22,6 +22,10 @@ func Parse(data []byte) (RuleSet, error) {
 	return set, nil
 }
 
+// Validate checks a programmatically constructed rule set. API clients use
+// this through the YAML round trip before a new rules file is accepted.
+func Validate(set RuleSet) error { return set.validate() }
+
 // Load reads a rule set from disk.
 func Load(path string) (RuleSet, error) {
 	data, err := os.ReadFile(path)
@@ -124,8 +128,18 @@ func (r Rule) validate(name string) error {
 		default:
 			return fail("unknown image_analysis method %q (want reverse_search or ocr)", r.Method)
 		}
+	case TypeApplicationFeeCheck:
+		if err := validateScope(r.Scope); err != nil {
+			return fail("%w", err)
+		}
+		if r.Severity != SeverityRisk || r.Hard {
+			return fail("application_fee_check must use risk severity and cannot be hard")
+		}
+		if r.ApplicationFeeHighThreshold <= 0 {
+			return fail("application_fee_check needs application_fee_high_threshold greater than zero")
+		}
 	default:
-		return fail("unknown rule type %q (want pattern_match, contact_check or image_analysis)", r.Type)
+		return fail("unknown rule type %q (want pattern_match, contact_check, image_analysis or application_fee_check)", r.Type)
 	}
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/aidandevv/craig-extension/internal/domain"
+	"github.com/aidandevv/craig-extension/internal/trace"
 )
 
 // OCR reads text baked into a listing photo. Watermarks are the target: an MLS
@@ -32,26 +33,20 @@ func NewOCR(v *Vision, opts OCROptions) *OCR {
 func (o *OCR) Name() string { return o.name }
 
 func (o *OCR) Evaluate(ctx context.Context, listing domain.Listing) (domain.SignalResult, error) {
-	pre, hash, proceed := o.vision.call(ctx, o.name, FeatureTextDetection, listing)
-	if !proceed {
-		return pre, nil
-	}
-
-	data, err := o.vision.annotate(ctx, listing.Images[0], "TEXT_DETECTION")
-	if err != nil {
-		return domain.SignalResult{
-			Name:    o.name,
-			Skipped: domain.SkipProviderError,
-			Details: []string{err.Error()},
-		}, nil
-	}
-
-	text := extractedText(data)
-	result := apply(o.name, o.groups, strings.ToLower(text))
-	if len(result.Flags) > 0 {
-		result.Details = append(result.Details, "image text: "+truncate(text, 200))
-	}
-	return result, o.vision.store.Put(ctx, hash, o.name, result)
+	return o.vision.evaluateImages(ctx, o.name, FeatureTextDetection, false, o.groups, listing,
+		func(ctx context.Context, imageURL string, index, total int) (domain.SignalResult, error) {
+			data, err := o.vision.annotate(ctx, imageURL, "TEXT_DETECTION")
+			if err != nil {
+				return domain.SignalResult{}, err
+			}
+			text := extractedText(data)
+			trace.Log(ctx, "vision", "%s image %d/%d: Vision OCR completed (%d characters)", o.name, index, total, len([]rune(text)))
+			result := apply(o.name, o.groups, strings.ToLower(text))
+			if len(result.Flags) > 0 {
+				result.Details = append(result.Details, "image text: "+truncate(text, 200))
+			}
+			return result, nil
+		})
 }
 
 func extractedText(data map[string]any) string {

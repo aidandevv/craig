@@ -4,12 +4,14 @@ package detect
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/aidandevv/craig-extension/internal/domain"
+	"github.com/aidandevv/craig-extension/internal/trace"
 )
 
 // Detector is one independent check. Implementations must be safe to call
@@ -32,6 +34,7 @@ func Evaluate(ctx context.Context, detectors []Detector, listing domain.Listing)
 		go func() {
 			defer wg.Done()
 			started := time.Now()
+			trace.Log(ctx, "detector", "%s started", detector.Name())
 			result, err := detector.Evaluate(ctx, listing)
 			if err != nil {
 				result = domain.SignalResult{
@@ -45,6 +48,7 @@ func Evaluate(ctx context.Context, detectors []Detector, listing domain.Listing)
 			}
 			result.Risk = Clamp(result.Risk)
 			result.LatencyMS = time.Since(started).Milliseconds()
+			trace.Log(ctx, "detector", "%s finished in %dms (%s)", detector.Name(), result.LatencyMS, outcome(result))
 			results <- result
 		}()
 	}
@@ -61,3 +65,13 @@ func Evaluate(ctx context.Context, detectors []Detector, listing domain.Listing)
 
 // Clamp bounds a risk contribution to [0,1].
 func Clamp(v float64) float64 { return math.Max(0, math.Min(1, v)) }
+
+func outcome(result domain.SignalResult) string {
+	if result.Skipped != "" {
+		return "skipped: " + result.Skipped
+	}
+	if len(result.Flags) > 0 {
+		return fmt.Sprintf("matched %d rule(s)", len(result.Flags))
+	}
+	return "no match"
+}

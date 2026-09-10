@@ -62,6 +62,12 @@ rules:
     scope: whole_post
     severity: green
     checks: [direct_phone_present]
+  application_fee_details:
+    type: application_fee_check
+    description: "Holding fee or unusually high rental fee (application, admin, processing, credit check, and similar)"
+    scope: whole_post
+    severity: risk
+    application_fee_high_threshold: 100
   reverse_image_real_estate:
     type: image_analysis
     description: "Listing photo also appears on a real-estate site"

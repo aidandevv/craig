@@ -1,0 +1,462 @@
+// Package daemon exposes the local analysis engine to the browser extension.
+// Its request guard is intentionally stricter than a typical localhost server:
+// every site a user visits can attempt to call localhost, so localhost alone is
+// not an authorization boundary.
+package daemon
+
+import (
+	"crypto/subtle"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/aidandevv/craig-extension/internal/config"
+	"github.com/aidandevv/craig-extension/internal/detect"
+	"github.com/aidandevv/craig-extension/internal/domain"
+	"github.com/aidandevv/craig-extension/internal/marketplace"
+	"github.com/aidandevv/craig-extension/internal/risk"
+	"github.com/aidandevv/craig-extension/internal/rules"
+	"github.com/aidandevv/craig-extension/internal/signals"
+	"github.com/aidandevv/craig-extension/internal/trace"
+)
+
+const maxRequestBody = 1 << 20 // Listing payloads should be small, never image bytes.
+
+// Options contains the runtime collaborators that must be created outside the
+// HTTP layer. In particular, the cache and Vision client have one shared
+// lifetime across all requests.
+type Options struct {
+	Port          int
+	Token         string
+	RulesPath     string
+	AutoReload    bool
+	CacheLocation string
+	Vision        *signals.Vision
+	Verbose       bool
+	VerboseWriter io.Writer
+}
+
+// Server is an http.Handler with a swappable compiled ruleset. A failed reload
+// never replaces a last-known-good set.
+type Server struct {
+	port          int
+	token         string
+	rulesPath     string
+	autoReload    bool
+	cacheLocation string
+	deps          rules.Deps
+	vision        *signals.Vision
+	verbose       bool
+	verboseWriter io.Writer
+
+	mu           sync.RWMutex
+	set          rules.RuleSet
+	compiled     rules.Compiled
+	rulesModTime time.Time
+	rulesSize    int64
+}
+
+// New loads and compiles the first ruleset. A daemon that cannot validate its
+// rules does not start: otherwise a user could assume stale or partial rules
+// were protecting them.
+func New(opts Options) (*Server, error) {
+	if opts.Port < 1 || opts.Port > 65535 {
+		return nil, fmt.Errorf("daemon port must be in [1,65535]")
+	}
+	if len(opts.Token) == 0 {
+		return nil, errors.New("daemon bearer token is required")
+	}
+	if strings.TrimSpace(opts.RulesPath) == "" {
+		return nil, errors.New("rules path is required")
+	}
+	set, err := loadRulesWithMigrations(opts.RulesPath)
+	if err != nil {
+		return nil, err
+	}
+	compiled, err := rules.Compile(set, rules.Deps{Vision: opts.Vision})
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(opts.RulesPath)
+	if err != nil {
+		return nil, fmt.Errorf("stat rules file: %w", err)
+	}
+	return &Server{
+		port: opts.Port, token: opts.Token, rulesPath: opts.RulesPath,
+		autoReload: opts.AutoReload, cacheLocation: opts.CacheLocation,
+		deps: rules.Deps{Vision: opts.Vision}, vision: opts.Vision,
+		verbose: opts.Verbose, verboseWriter: opts.VerboseWriter, set: set, compiled: compiled,
+		rulesModTime: info.ModTime(), rulesSize: info.Size(),
+	}, nil
+}
+
+// ServeHTTP implements the complete daemon API. Host and Origin checks run
+// before endpoint routing, including healthz, to avoid making this process a
+// useful DNS-rebinding target.
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !s.allowedHost(r.Host) {
+		writeError(w, http.StatusForbidden, "host is not allowed")
+		return
+	}
+	if !allowedOrigin(r.Header.Get("Origin")) {
+		writeError(w, http.StatusForbidden, "origin is not allowed")
+		return
+	}
+	if r.Method == http.MethodOptions && isAPIPath(r.URL.Path) {
+		s.writePreflight(w, r)
+		return
+	}
+	if origin := r.Header.Get("Origin"); origin != "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Vary", "Origin")
+	}
+
+	switch r.URL.Path {
+	case "/healthz":
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w, http.MethodGet)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	case "/api/analyze":
+		if !s.requireAuth(w, r) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		s.analyze(w, r)
+	case "/api/config":
+		if !s.requireAuth(w, r) {
+			return
+		}
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w, http.MethodGet)
+			return
+		}
+		s.getConfig(w)
+	case "/api/rules":
+		if !s.requireAuth(w, r) {
+			return
+		}
+		s.rulesEndpoint(w, r)
+	case "/api/rules/schema":
+		if !s.requireAuth(w, r) {
+			return
+		}
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w, http.MethodGet)
+			return
+		}
+		s.getSchema(w)
+	case "/api/reload-rules":
+		if !s.requireAuth(w, r) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		if err := s.reload(); err != nil {
+			writeError(w, http.StatusUnprocessableEntity, "reload rules: "+err.Error())
+			return
+		}
+		s.mu.RLock()
+		version := s.set.Version
+		s.mu.RUnlock()
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": version})
+	default:
+		writeError(w, http.StatusNotFound, "not found")
+	}
+}
+
+func isAPIPath(path string) bool {
+	return path == "/api/analyze" || path == "/api/config" || path == "/api/rules" ||
+		path == "/api/rules/schema" || path == "/api/reload-rules"
+}
+
+func (s *Server) allowedHost(host string) bool {
+	name, port, err := net.SplitHostPort(host)
+	if err != nil || port != fmt.Sprint(s.port) {
+		return false
+	}
+	return name == "127.0.0.1" || strings.EqualFold(name, "localhost")
+}
+
+func allowedOrigin(raw string) bool {
+	if raw == "" {
+		return true // CLI callers do not send Origin.
+	}
+	origin, err := url.Parse(raw)
+	return err == nil && origin.Scheme == "chrome-extension" && origin.Host != ""
+}
+
+func (s *Server) writePreflight(w http.ResponseWriter, r *http.Request) {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Vary", "Origin")
+	}
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) bool {
+	value := r.Header.Get("Authorization")
+	provided, ok := strings.CutPrefix(value, "Bearer ")
+	if !ok || provided == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(s.token)) != 1 {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="craig-extension"`)
+		writeError(w, http.StatusUnauthorized, "valid bearer token required")
+		return false
+	}
+	return true
+}
+
+func (s *Server) analyze(w http.ResponseWriter, r *http.Request) {
+	recorder := trace.NewRecorder(s.writeTraceEvent)
+	ctx := trace.WithSink(r.Context(), recorder)
+	trace.Log(ctx, "daemon", "accepted analysis request")
+	if err := s.maybeReload(); err != nil {
+		trace.Log(ctx, "rules", "reload failed; last known-good rules remain active")
+		writeAnalysisError(w, http.StatusServiceUnavailable, "rules changed but could not be reloaded: "+err.Error(), recorder.Events())
+		return
+	}
+	var listing domain.Listing
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBody))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&listing); err != nil {
+		trace.Log(ctx, "listing", "request JSON could not be decoded")
+		writeAnalysisError(w, http.StatusBadRequest, "invalid listing JSON: "+err.Error(), recorder.Events())
+		return
+	}
+	if err := requireEOF(decoder); err != nil {
+		trace.Log(ctx, "listing", "request JSON had trailing data")
+		writeAnalysisError(w, http.StatusBadRequest, "invalid listing JSON: "+err.Error(), recorder.Events())
+		return
+	}
+	listing, err := marketplace.Normalize(listing)
+	if err != nil {
+		trace.Log(ctx, "listing", "listing validation failed")
+		writeAnalysisError(w, http.StatusUnprocessableEntity, "invalid listing: "+err.Error(), recorder.Events())
+		return
+	}
+	trace.Log(ctx, "listing", "normalized listing with %d image(s)", len(listing.Images))
+	s.mu.RLock()
+	compiled := s.compiled
+	s.mu.RUnlock()
+	trace.Log(ctx, "rules", "running %d detector(s) for %d enabled rule(s)", len(compiled.Detectors), len(compiled.Rules))
+	started := time.Now()
+	results := detect.Evaluate(ctx, compiled.Detectors, listing)
+	assessment := risk.Assess(results, compiled, time.Since(started))
+	trace.Log(ctx, "assessment", "completed in %dms; %d of %d checks ran", assessment.AnalysisTimeMS, assessment.Coverage.Ran, assessment.Coverage.Enabled)
+	writeJSON(w, http.StatusOK, struct {
+		risk.Assessment
+		Trace []trace.Event `json:"trace"`
+	}{Assessment: assessment, Trace: recorder.Events()})
+}
+
+func (s *Server) writeTraceEvent(event trace.Event) {
+	if !s.verbose || s.verboseWriter == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(s.verboseWriter, "[%s] %-10s %s\n", event.Timestamp.Format("15:04:05.000"), event.Step, event.Message)
+}
+
+func (s *Server) getConfig(w http.ResponseWriter) {
+	s.mu.RLock()
+	version := s.set.Version
+	enabled := len(s.compiled.Rules)
+	s.mu.RUnlock()
+	response := struct {
+		RulesVersion string `json:"rules_version"`
+		Providers    struct {
+			GoogleVision bool `json:"google_vision"`
+		} `json:"providers"`
+		CacheLocation    string `json:"cache_location"`
+		EnabledRuleCount int    `json:"enabled_rule_count"`
+	}{
+		RulesVersion: version, CacheLocation: s.cacheLocation, EnabledRuleCount: enabled,
+	}
+	response.Providers.GoogleVision = s.vision != nil && s.vision.Enabled()
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) rulesEndpoint(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.mu.RLock()
+		set := s.set
+		s.mu.RUnlock()
+		writeJSON(w, http.StatusOK, set)
+	case http.MethodPut:
+		s.putRules(w, r)
+	default:
+		methodNotAllowed(w, http.MethodGet+", "+http.MethodPut)
+	}
+}
+
+func (s *Server) putRules(w http.ResponseWriter, r *http.Request) {
+	var candidate rules.RuleSet
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBody))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&candidate); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid rules JSON: "+err.Error())
+		return
+	}
+	if err := requireEOF(decoder); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid rules JSON: "+err.Error())
+		return
+	}
+	if _, err := rules.MigrateApplicationFeeRule(&candidate); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "migrate rules: "+err.Error())
+		return
+	}
+	data, err := yaml.Marshal(candidate)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "encode rules: "+err.Error())
+		return
+	}
+	validated, err := rules.Parse(data)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	compiled, err := rules.Compile(validated, s.deps)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	if err := config.WriteFileSecure(s.rulesPath, data); err != nil {
+		writeError(w, http.StatusInternalServerError, "write rules: "+err.Error())
+		return
+	}
+	info, err := os.Stat(s.rulesPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "stat written rules: "+err.Error())
+		return
+	}
+	s.mu.Lock()
+	s.set, s.compiled, s.rulesModTime, s.rulesSize = validated, compiled, info.ModTime(), info.Size()
+	s.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": validated.Version})
+}
+
+func (s *Server) getSchema(w http.ResponseWriter) {
+	presetNames := make([]string, 0, len(rules.Presets()))
+	for name := range rules.Presets() {
+		presetNames = append(presetNames, name)
+	}
+	sort.Strings(presetNames)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"rule_types":    []string{rules.TypePatternMatch, rules.TypeContactCheck, rules.TypeImageAnalysis, rules.TypeApplicationFeeCheck},
+		"scopes":        []string{rules.ScopeTitle, rules.ScopeDescription, rules.ScopeCaption, rules.ScopeWholePost},
+		"severities":    []string{rules.SeverityRed, rules.SeverityRisk, rules.SeverityGreen},
+		"image_methods": []string{rules.MethodReverseSearch, rules.MethodOCR},
+		"presets":       rules.Presets(),
+		"preset_names":  presetNames,
+	})
+}
+
+func (s *Server) maybeReload() error {
+	if !s.autoReload {
+		return nil
+	}
+	info, err := os.Stat(s.rulesPath)
+	if err != nil {
+		return err
+	}
+	s.mu.RLock()
+	changed := !info.ModTime().Equal(s.rulesModTime) || info.Size() != s.rulesSize
+	s.mu.RUnlock()
+	if !changed {
+		return nil
+	}
+	return s.reload()
+}
+
+func (s *Server) reload() error {
+	set, err := loadRulesWithMigrations(s.rulesPath)
+	if err != nil {
+		return err
+	}
+	compiled, err := rules.Compile(set, s.deps)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(s.rulesPath)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.set, s.compiled, s.rulesModTime, s.rulesSize = set, compiled, info.ModTime(), info.Size()
+	s.mu.Unlock()
+	return nil
+}
+
+func loadRulesWithMigrations(path string) (rules.RuleSet, error) {
+	set, err := rules.Load(path)
+	if err != nil {
+		return rules.RuleSet{}, err
+	}
+	changed, err := rules.MigrateApplicationFeeRule(&set)
+	if err != nil {
+		return rules.RuleSet{}, fmt.Errorf("migrate rules: %w", err)
+	}
+	if !changed {
+		return set, nil
+	}
+	data, err := yaml.Marshal(set)
+	if err != nil {
+		return rules.RuleSet{}, fmt.Errorf("encode migrated rules: %w", err)
+	}
+	if err := config.WriteFileSecure(path, data); err != nil {
+		return rules.RuleSet{}, fmt.Errorf("write migrated rules: %w", err)
+	}
+	return set, nil
+}
+
+func requireEOF(decoder *json.Decoder) error {
+	var value any
+	err := decoder.Decode(&value)
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	if err == nil {
+		return errors.New("request must contain one JSON value")
+	}
+	return err
+}
+
+func methodNotAllowed(w http.ResponseWriter, allowed string) {
+	w.Header().Set("Allow", allowed)
+	writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+}
+
+func writeError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, map[string]string{"error": message})
+}
+
+func writeAnalysisError(w http.ResponseWriter, status int, message string, events []trace.Event) {
+	writeJSON(w, status, struct {
+		Error string        `json:"error"`
+		Trace []trace.Event `json:"trace"`
+	}{Error: message, Trace: events})
+}
+
+func writeJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
+}

@@ -20,6 +20,7 @@ const (
 	exitOK      = 0
 	exitUsage   = 1
 	exitRuleSet = 2
+	exitRuntime = 3
 )
 
 // runAnalyze is parameterized I/O so its exit behavior can be tested without
