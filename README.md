@@ -41,6 +41,7 @@ only run when you ask.
 | `internal/cache` | SQLite: image-signal results and the durable monthly API budget |
 | `internal/signals` | Google Vision reverse-image search and OCR watermark detection |
 | `internal/rules` | Embedded/user-defined YAML rules compiled into detectors |
+| `internal/marketdata` | Versioned offline HUD Small Area Fair Market Rent benchmarks |
 | `internal/risk` | Explainable score, band, coverage, and five result buckets |
 | `internal/config` | Private local config, generated bearer token, and BYOK settings |
 | `internal/marketplace` | Listing payload validation and normalization at the API boundary |
@@ -73,7 +74,7 @@ Excerpt from an actual offline run with the embedded rules and no Vision key:
 
 ```text
 Risk 1.00  HIGH  (hard flag)
-9 of 12 checks ran in 0ms
+10 of 15 checks ran in 0ms
 
 HIGH RISK
   • Owner claims to be unreachable in person
@@ -83,7 +84,10 @@ POTENTIALLY RISKY
   • Seller reachable only through the marketplace
   • High-pressure language discouraging due diligence
 
-NOT EVALUATED (3)
+NOT EVALUATED (5)
+
+  market_rent_below_hud              market_rent_inputs_missing
+  rent_price_mismatch                rent_price_inputs_missing
   mls_watermark                    no_api_key
   reverse_image_real_estate        no_api_key
   stock_photos                     no_api_key
@@ -109,14 +113,53 @@ the next analysis request, or call `POST /api/reload-rules` explicitly.
 With Vision configured, the daemon processes every valid public listing image.
 Each uncached image uses one `WEB_DETECTION` request (shared by the reverse
 image and stock-photo rules) and one `TEXT_DETECTION` OCR request (for the MLS
-watermark rule); cached image results do not call Vision again. Start the daemon
+watermark rule). Successful provider evidence is cached for 24 hours and re-scored
+against current rules on every analysis. Clicking the extension explicitly
+rechecks photos against Vision, bypassing that cache while respecting the monthly
+budget. Failed photos are reported as incomplete. Only matching pages and
+full/partial image matches are used; visually similar suggestions are ignored. Start the daemon
 with `--verbose` to mirror the safe execution trace to the terminal. It never
 prints your token, Vision key, listing text, or image URLs.
 
-The default offline fee check is deliberately caution-only: it highlights a
-stated holding fee or an application fee above $100, but neither can create a
-hard flag. Adjust `application_fee_high_threshold` in your generated
-`rules.yaml` if a different local threshold fits your market.
+The default offline fee checks are deliberately caution-only and reported
+separately: any hold/reservation fee, key money, option/commitment/priority/
+waitlist fee, application or good-faith deposit, or pre-lease fee is
+nonstandard; familiar fees are flagged only when unusually high. The default
+application-fee threshold is $50; screening, processing, administrative,
+lease-initiation, move-in, amenity, convenience, and pet fees use their own
+generous ceilings. “Charge” and “cost” are treated like “fee.” A fee alone can
+never create a hard flag. Adjust `application_fee_high_threshold` in your
+generated `rules.yaml` if a different local application threshold fits your
+market.
+
+### Advertised-rent consistency check
+
+The default rules also compare the page's structured rent with dollar amounts
+in its title. A difference of 10% or more creates a small, caution-only prompt
+to confirm the current rent before applying or paying a fee. It is designed to
+surface stale or bait-and-switch pricing, not to allege fraud, and is not
+evaluated when either input is absent.
+
+### HUD market-rent caution check
+
+The default rules also include one offline, caution-only market-rent check
+(`weight: 0.15`). It compares a listing only when the page supplies a monthly
+USD price, a studio-to-four-bedroom count, and a five-digit ZIP included in the
+bundled HUD data. It covers 1,395 ZIP codes across the SF Bay Area, Los Angeles,
+and the New York metro area (including Jersey City and Newark). Missing fields
+or an unsupported ZIP are shown as **not evaluated**; the engine never falls
+back to a citywide rate or geocodes an address.
+
+The bundled snapshot is [HUD FY 2027 Small Area Fair Market Rents](https://www.huduser.gov/portal/datasets/fmr/fmr2027/FY27_safmrs.xlsx), effective October 1, 2026. A SAFMR is HUD's ZIP-level estimate of the 40th-percentile **gross** rent, including estimated tenant-paid utilities. It is not a median asking rent, an appraisal, a live comparable set, or evidence of fraud. The rule is intentionally conservative: only rents at or below 55% of the benchmark add a review cue, and its explanation says exactly which HUD rate was used.
+
+Refresh the embedded asset whenever HUD publishes a new effective schedule;
+the source workbook is not committed:
+
+```sh
+python3 \
+  scripts/build_hud_safmr_data.py /path/to/FY27_safmrs.xlsx \
+  internal/marketdata/fy2027_selected.json
+```
 
 ## Chrome extension
 
