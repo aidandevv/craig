@@ -85,4 +85,28 @@ func TestMigrateRentPriceMismatchRuleAddsOnlyWhenMissing(t *testing.T) {
 	}
 }
 
+func TestMigratePrepaymentBeforeAccessRuleAddsOnlyWhenMissing(t *testing.T) {
+	set, err := DefaultRuleSet()
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(set.Rules, "prepayment_before_access")
+	changed, err := MigratePrepaymentBeforeAccessRule(&set)
+	if err != nil || !changed {
+		t.Fatalf("migration changed=%v err=%v", changed, err)
+	}
+	if got := set.Rules["prepayment_before_access"]; got.Type != TypePatternMatch || got.Severity != SeverityRisk || got.Hard || got.Match.Preset != "prepayment_before_access" {
+		t.Errorf("migrated rule = %+v", got)
+	}
+
+	set.Rules["prepayment_before_access"] = Rule{Type: TypePatternMatch, Severity: SeverityRisk, Enabled: boolPtr(false), Scope: ScopeWholePost, Match: Match{Custom: []string{"custom prepayment policy"}}}
+	changed, err = MigratePrepaymentBeforeAccessRule(&set)
+	if err != nil || changed {
+		t.Fatalf("existing rule changed=%v err=%v", changed, err)
+	}
+	if got := set.Rules["prepayment_before_access"]; got.IsEnabled() || got.Match.Custom[0] != "custom prepayment policy" {
+		t.Errorf("existing custom rule was overwritten: %+v", got)
+	}
+}
+
 func boolPtr(value bool) *bool { return &value }

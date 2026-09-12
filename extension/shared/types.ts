@@ -26,7 +26,14 @@ export interface Finding {
   label: string;
   detail?: string;
   weight?: number;
+	text_match?: TextMatchEvidence;
   image_matches?: ImageMatchEvidence[];
+}
+
+export interface TextMatchEvidence {
+	before?: string;
+	match: string;
+	after?: string;
 }
 
 export interface ImageMatchEvidence {

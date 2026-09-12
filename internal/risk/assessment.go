@@ -14,7 +14,16 @@ type Finding struct {
 	Label        string               `json:"label"`
 	Detail       string               `json:"detail,omitempty"`
 	Weight       float64              `json:"weight,omitempty"`
+	TextMatch    *TextMatchEvidence   `json:"text_match,omitempty"`
 	ImageMatches []ImageMatchEvidence `json:"image_matches,omitempty"`
+}
+
+// TextMatchEvidence is the presentation-safe form of a text-rule match. The
+// rule key is already carried by Finding, so it is intentionally not repeated.
+type TextMatchEvidence struct {
+	Before string `json:"before,omitempty"`
+	Match  string `json:"match"`
+	After  string `json:"after,omitempty"`
 }
 
 // ImageMatchEvidence is safe-to-render provenance for a reverse-image
@@ -107,7 +116,7 @@ func Assess(results []domain.SignalResult, compiled rules.Compiled, elapsed time
 		for _, rule := range covered {
 			delete(notEvaluated, rule)
 			if matched[rule] {
-				a.add(rule, compiled, detailFor(result, rule), imageMatchesFor(result, rule))
+				a.add(rule, compiled, detailFor(result, rule), textMatchFor(result, rule), imageMatchesFor(result, rule))
 				continue
 			}
 			if result.ImagesChecked < result.ImagesTotal {
@@ -139,9 +148,9 @@ func Assess(results []domain.SignalResult, compiled rules.Compiled, elapsed time
 	return a
 }
 
-func (a *Assessment) add(name string, compiled rules.Compiled, detail string, imageMatches []ImageMatchEvidence) {
+func (a *Assessment) add(name string, compiled rules.Compiled, detail string, textMatch *TextMatchEvidence, imageMatches []ImageMatchEvidence) {
 	rule := compiled.Rules[name]
-	finding := Finding{Rule: name, Label: label(name, rule), Detail: detail, Weight: compiled.Severities.WeightFor(rule), ImageMatches: imageMatches}
+	finding := Finding{Rule: name, Label: label(name, rule), Detail: detail, Weight: compiled.Severities.WeightFor(rule), TextMatch: textMatch, ImageMatches: imageMatches}
 	switch {
 	case rule.Severity == rules.SeverityGreen:
 		a.PositiveSignals = append(a.PositiveSignals, finding)
@@ -150,6 +159,15 @@ func (a *Assessment) add(name string, compiled rules.Compiled, detail string, im
 	default:
 		a.PotentiallyRisky = append(a.PotentiallyRisky, finding)
 	}
+}
+
+func textMatchFor(result domain.SignalResult, rule string) *TextMatchEvidence {
+	for _, evidence := range result.TextMatches {
+		if evidence.Rule == rule && evidence.Match != "" {
+			return &TextMatchEvidence{Before: evidence.Before, Match: evidence.Match, After: evidence.After}
+		}
+	}
+	return nil
 }
 
 func imageMatchesFor(result domain.SignalResult, rule string) []ImageMatchEvidence {

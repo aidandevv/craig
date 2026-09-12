@@ -51,3 +51,11 @@ deposit_before_viewing:
     - "(?:hold|secure|reserve) (?:the )?(?:unit|apartment|place) with"
     - "deposit before (?:you )?(?:view|see|visit)"
     - "send (?:the )?(?:deposit|money) (?:first|up ?front)"
+
+prepayment_before_access:
+  description: "Payment requested before a tour, keys, or physical access"
+  patterns:
+    - "(?:pay|send|wire|transfer|submit) (?:a |the )?(?:fee|deposit|payment|rent|money) (?:before|prior to) (?:(?:the|your|a) )?(?:tour|showing|viewing|visit|access|keys?|lockbox(?: code)?)"
+    - "(?:pay|send|wire|transfer|submit) (?:before|prior to) (?:(?:the|your|a) )?(?:tour|showing|viewing|visit|access|keys?|lockbox(?: code)?)"
+    - "(?:a|the) (?:fee|deposit|payment) (?:is )?(?:required|due|needed) (?:before|prior to) (?:(?:the|your|a) )?(?:tour|showing|viewing|visit|access|keys?|lockbox(?: code)?)"
+    - "(?:deposit|fee) (?:for|to receive|to get) (?:a )?lockbox(?: code)?"

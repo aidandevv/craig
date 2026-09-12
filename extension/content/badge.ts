@@ -148,9 +148,28 @@ function appendFindings(document: Document, panel: HTMLElement, title: string, f
 	for (const finding of findings) {
 		const { card, body } = checkCase(document, finding.label, state, tone, open);
 		if (finding.detail) body.append(el(document, "p", finding.detail));
+		appendTextMatch(document, body, finding);
 		appendImageMatches(document, body, finding);
 		panel.append(card);
 	}
+}
+
+function appendTextMatch(document: Document, body: HTMLElement, finding: Finding): void {
+	const evidence = finding.text_match;
+	if (!evidence?.match) return;
+
+	const section = document.createElement("section");
+	section.className = "text-match";
+	section.append(el(document, "p", "Matched listing text"));
+	const excerpt = document.createElement("p");
+	excerpt.className = "text-excerpt";
+	if (evidence.before) excerpt.append(document.createTextNode(`…${evidence.before} `));
+	const match = document.createElement("mark");
+	match.textContent = evidence.match;
+	excerpt.append(match);
+	if (evidence.after) excerpt.append(document.createTextNode(` ${evidence.after}…`));
+	section.append(excerpt);
+	body.append(section);
 }
 
 function appendNames(document: Document, panel: HTMLElement, title: string, names: string[], open: boolean): void {
@@ -173,6 +192,7 @@ const PASSED_CHECK_DESCRIPTIONS: Record<string, string> = {
 	absentee_landlord: "The lister didn't claim to be out of town, unreachable, or unable to meet in person.",
 	contact_evasion_phrases: "No common evasion phrases like \"email only,\" \"no calls,\" or \"contact through the app\" were found.",
 	deposit_before_viewing: "No request for a deposit or hold before you've seen the place.",
+	prepayment_before_access: "No request to pay before a tour, keys, a lockbox code, or other physical access was found.",
 	obfuscated_contact: "Contact details weren't written in a disguised way, like spelled-out digits or spaced-out email addresses.",
 	relay_only_contact: "The listing isn't limited to in-app messaging only — a direct contact channel is available.",
 	direct_phone_listed: "This listing didn't include a direct phone number in the post.",
@@ -338,7 +358,7 @@ function style(document: Document): HTMLStyleElement {
 	    .gauge { display: flex; justify-content: center; margin: 2px 0 6px; color: #4475a6; } .gauge-svg { width: 168px; height: 130px; } .gauge-track { fill: none; stroke: #e7ebf0; stroke-width: 14; stroke-linecap: round; } .gauge-progress { fill: none; stroke: currentColor; stroke-width: 14; stroke-linecap: round; } .gauge-value { fill: currentColor; font-size: 34px; font-weight: 800; font-family: inherit; } .gauge.low { color: #2f8a35; } .gauge.caution { color: #9a6714; } .gauge.elevated { color: #b2571f; } .gauge.high { color: #b23a38; }
 	    .group-heading { margin: 16px 0 7px; color: #4a5158; font-size: 12px; font-weight: 800; letter-spacing: .01em; text-transform: uppercase; }
 	    .check-case { margin-top: 8px; border: 1px solid #d5d9de; border-radius: 2px; background: #fff; } .check-case summary { display: flex; align-items: center; gap: 10px; padding: 10px 11px; cursor: pointer; background: #f8f9fa; font-weight: 750; list-style: none; } .check-case summary::-webkit-details-marker { display: none; } .check-case[open] summary { border-bottom: 1px solid #d5d9de; } .case-title { min-width: 0; color: #26313d; } .case-state { margin-left: auto; color: #56616d; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-align: right; text-transform: uppercase; } .check-case.danger .case-title, .check-case.danger .case-state { color: #b23a38; } .check-case.caution .case-title, .check-case.caution .case-state { color: #9a6714; } .check-case.positive .case-title, .check-case.positive .case-state { color: #2f8a35; }
-	    .case-body { padding: 10px 11px 11px; } .case-body > p { margin: 0; color: #4e5a66; font-size: 13px; } .image-match { margin-top: 11px; padding-top: 10px; border-top: 1px solid #e2e5e8; } .image-match > p { margin: 0 0 7px; color: #36424e; font-size: 12px; font-weight: 800; } .image-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } figure { min-width: 0; margin: 0; } figure img { display: block; width: 100%; aspect-ratio: 4 / 3; border: 1px solid #d5d9de; background: #f2f3f5; object-fit: cover; } figcaption { margin-top: 4px; color: #596572; font-size: 11px; } .image-unavailable { display: flex; align-items: center; box-sizing: border-box; min-height: 96px; margin: 0; padding: 8px; border: 1px dashed #cbd1d7; color: #66727d; font-size: 11px; } .match-source { display: block; overflow-wrap: anywhere; color: #2168a8; font-size: 12px; text-decoration: underline; }
+	    .case-body { padding: 10px 11px 11px; } .case-body > p { margin: 0; color: #4e5a66; font-size: 13px; } .text-match, .image-match { margin-top: 11px; padding-top: 10px; border-top: 1px solid #e2e5e8; } .text-match > p, .image-match > p { margin: 0 0 7px; color: #36424e; font-size: 12px; font-weight: 800; } .text-excerpt { margin: 0 !important; color: #4e5a66; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; } mark { padding: 1px 3px; border-radius: 2px; background: #ffe08a; color: #312400; font-weight: 800; } .image-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } figure { min-width: 0; margin: 0; } figure img { display: block; width: 100%; aspect-ratio: 4 / 3; border: 1px solid #d5d9de; background: #f2f3f5; object-fit: cover; } figcaption { margin-top: 4px; color: #596572; font-size: 11px; } .image-unavailable { display: flex; align-items: center; box-sizing: border-box; min-height: 96px; margin: 0; padding: 8px; border: 1px dashed #cbd1d7; color: #66727d; font-size: 11px; } .match-source { display: block; overflow-wrap: anywhere; color: #2168a8; font-size: 12px; text-decoration: underline; }
 	    .trace { clear: both; } .trace-note { margin: 0 0 8px !important; font-size: 12px !important; } pre { max-height: 230px; overflow: auto; margin: 8px 0 0; padding: 10px; border-radius: 2px; background: #172434; color: #dce9f5; font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
 	    button { margin-top: 14px; padding: 7px 10px; border: 1px solid #9eabb9; border-radius: 3px; background: #f8fafc; color: #233b54; cursor: pointer; font: inherit; font-weight: 700; } button:hover { background: #edf3f8; } .settings { display: block; margin-left: auto; }
   `;

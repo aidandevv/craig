@@ -27,7 +27,7 @@ func assessmentFixture() rules.Compiled {
 }
 func assessmentResults() []domain.SignalResult {
 	return []domain.SignalResult{
-		{Name: "gift_card_payment", Risk: .45, Flags: []string{"gift_card_payment"}, Details: []string{`gift_card_payment: matched "gift cards"`}},
+		{Name: "gift_card_payment", Risk: .45, Flags: []string{"gift_card_payment"}, Details: []string{`gift_card_payment: matched "gift cards"`}, TextMatches: []domain.TextMatchEvidence{{Rule: "gift_card_payment", Before: "Please", Match: "gift cards", After: "today"}}},
 		{Name: "my_landlord_tell", Risk: .28, Flags: []string{"my_landlord_tell"}, Details: []string{`my_landlord_tell: matched "keys will be shipped"`}},
 		{Name: "contact_evasion"}, {Name: "direct_phone_listed", Flags: []string{"direct_phone_listed"}, Details: []string{"direct_phone_listed: direct phone"}},
 	}
@@ -43,6 +43,9 @@ func TestAssessWorkedExampleBucketsAndCoverage(t *testing.T) {
 	}
 	if len(got.HighRisk) != 1 || got.HighRisk[0].Rule != "gift_card_payment" || got.HighRisk[0].Label != "Gift-card payment requested" || got.HighRisk[0].Detail != `matched "gift cards"` {
 		t.Errorf("high risk = %+v", got.HighRisk)
+	}
+	if evidence := got.HighRisk[0].TextMatch; evidence == nil || evidence.Before != "Please" || evidence.Match != "gift cards" || evidence.After != "today" {
+		t.Errorf("text-match evidence = %+v", evidence)
 	}
 	if len(got.PotentiallyRisky) != 1 || got.PotentiallyRisky[0].Rule != "my_landlord_tell" || len(got.PositiveSignals) != 1 || got.PositiveSignals[0].Weight != 0 || !sameStrings(got.PassedChecks, []string{"contact_evasion"}) {
 		t.Errorf("buckets = %+v", got)

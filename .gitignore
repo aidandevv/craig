@@ -25,3 +25,6 @@ config.yaml
 # Extension build artifacts
 extension/node_modules/
 extension/dist/
+
+# Local working notes and journals are intentionally not published.
+/docs/

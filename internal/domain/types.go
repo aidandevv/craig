@@ -64,9 +64,20 @@ type SignalResult struct {
 	Flags           []string             `json:"flags,omitempty"`
 	Hard            bool                 `json:"hard"`
 	Details         []string             `json:"details,omitempty"`
+	TextMatches     []TextMatchEvidence  `json:"text_matches,omitempty"`
 	ImageMatches    []ImageMatchEvidence `json:"image_matches,omitempty"`
 	Skipped         string               `json:"skipped,omitempty"`
 	LatencyMS       int64                `json:"latency_ms"`
+}
+
+// TextMatchEvidence is a bounded excerpt from a text rule. Rule identifies
+// which finding it belongs to; the separate fields let clients highlight only
+// the actual match without treating listing text as HTML.
+type TextMatchEvidence struct {
+	Rule   string `json:"rule"`
+	Before string `json:"before,omitempty"`
+	Match  string `json:"match"`
+	After  string `json:"after,omitempty"`
 }
 
 // ImageMatchEvidence is a provider-returned reverse-image match attributed to

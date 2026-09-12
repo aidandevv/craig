@@ -44,6 +44,12 @@ rules:
     scope: whole_post
     severity: red
     match: {preset: deposit_before_viewing}
+  prepayment_before_access:
+    type: pattern_match
+    description: "Payment requested before a tour, keys, or physical access"
+    scope: whole_post
+    severity: risk
+    match: {preset: prepayment_before_access}
   obfuscated_contact:
     type: contact_check
     description: "Contact details written to evade detection"

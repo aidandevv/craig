@@ -341,6 +341,10 @@ func (s *Server) putRules(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "migrate rules: "+err.Error())
 		return
 	}
+	if _, err := rules.MigratePrepaymentBeforeAccessRule(&candidate); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "migrate rules: "+err.Error())
+		return
+	}
 	data, err := yaml.Marshal(candidate)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "encode rules: "+err.Error())
@@ -440,7 +444,11 @@ func loadRulesWithMigrations(path string) (rules.RuleSet, error) {
 	if err != nil {
 		return rules.RuleSet{}, fmt.Errorf("migrate rules: %w", err)
 	}
-	if !feeChanged && !marketRentChanged && !priceMismatchChanged {
+	prepaymentChanged, err := rules.MigratePrepaymentBeforeAccessRule(&set)
+	if err != nil {
+		return rules.RuleSet{}, fmt.Errorf("migrate rules: %w", err)
+	}
+	if !feeChanged && !marketRentChanged && !priceMismatchChanged && !prepaymentChanged {
 		return set, nil
 	}
 	data, err := yaml.Marshal(set)

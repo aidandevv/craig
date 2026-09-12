@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/aidandevv/craig-extension/internal/detect"
 	"github.com/aidandevv/craig-extension/internal/domain"
 )
+
+const matchContextWords = 4
 
 // patternMatch is the workhorse rule type: regular expressions over selected
 // listing text. It reports which pattern matched, because a score without a
@@ -75,9 +78,11 @@ func (p *patternMatch) Evaluate(_ context.Context, listing domain.Listing) (doma
 	}
 
 	var hits []string
+	var evidence []domain.TextMatchEvidence
 	for i, re := range p.compiled {
-		if re.MatchString(haystack) {
+		if location := re.FindStringIndex(haystack); location != nil {
 			hits = append(hits, p.sources[i])
+			evidence = append(evidence, textMatchEvidence(p.name, haystack, location))
 		}
 	}
 	if len(hits) == 0 {
@@ -85,10 +90,39 @@ func (p *patternMatch) Evaluate(_ context.Context, listing domain.Listing) (doma
 	}
 
 	return domain.SignalResult{
-		Name:    p.name,
-		Risk:    detect.Clamp(p.weight),
-		Hard:    p.hard,
-		Flags:   []string{p.name},
-		Details: []string{fmt.Sprintf("%s: matched %q", p.name, hits[0])},
+		Name:        p.name,
+		Risk:        detect.Clamp(p.weight),
+		Hard:        p.hard,
+		Flags:       []string{p.name},
+		Details:     []string{fmt.Sprintf("%s: matched %q", p.name, hits[0])},
+		TextMatches: evidence,
 	}, nil
+}
+
+// textMatchEvidence keeps the exact regex hit and a small, whitespace-normalized
+// word context. Listing text remains untrusted: this is structured data for a
+// client to render as text, never HTML.
+func textMatchEvidence(rule, text string, location []int) domain.TextMatchEvidence {
+	return domain.TextMatchEvidence{
+		Rule:   rule,
+		Before: lastWords(text[:location[0]], matchContextWords),
+		Match:  text[location[0]:location[1]],
+		After:  firstWords(text[location[1]:], matchContextWords),
+	}
+}
+
+func lastWords(text string, count int) string {
+	words := strings.Fields(text)
+	if len(words) > count {
+		words = words[len(words)-count:]
+	}
+	return strings.Join(words, " ")
+}
+
+func firstWords(text string, count int) string {
+	words := strings.Fields(text)
+	if len(words) > count {
+		words = words[:count]
+	}
+	return strings.Join(words, " ")
 }

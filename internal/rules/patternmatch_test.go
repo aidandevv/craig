@@ -76,6 +76,13 @@ func TestPatternMatchFlagsAndExplains(t *testing.T) {
 	if !strings.Contains(got.Details[0], "gift ?cards?") {
 		t.Errorf("details %v must name the pattern that matched", got.Details)
 	}
+	if len(got.TextMatches) != 1 {
+		t.Fatalf("text matches = %+v, want one", got.TextMatches)
+	}
+	evidence := got.TextMatches[0]
+	if evidence.Rule != "gift_card_payment" || evidence.Before != "I can only take" || evidence.Match != "GIFT CARDS" || evidence.After != "for the deposit" {
+		t.Errorf("text match evidence = %+v", evidence)
+	}
 }
 
 func TestPatternMatchRespectsScope(t *testing.T) {
@@ -167,6 +174,39 @@ func TestPatternMatchResolvesPresets(t *testing.T) {
 	}
 	if got.Risk != 0.45 {
 		t.Errorf("preset did not match, got risk %v", got.Risk)
+	}
+}
+
+func TestPrepaymentBeforeAccessPresetIsCautionOnlyAndAvoidsSafetyAdvice(t *testing.T) {
+	rule := Rule{
+		Type: TypePatternMatch, Scope: ScopeWholePost, Severity: SeverityRisk,
+		Match: Match{Preset: "prepayment_before_access"},
+	}
+	detector := mustPatternMatch(t, "prepayment_before_access", rule, .20)
+	cases := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{"pay before tour", "Please pay before your tour.", true},
+		{"deposit for lockbox code", "Send the deposit for a lockbox code.", true},
+		{"fee before keys", "The fee is due before keys are released.", true},
+		{"safety advice", "Tour before paying any deposit; no fees are due before keys.", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := detector.Evaluate(context.Background(), domain.Listing{Description: tc.text})
+			if err != nil {
+				t.Fatal(err)
+			}
+			matched := len(got.Flags) == 1
+			if matched != tc.want {
+				t.Errorf("matched=%v result=%+v", matched, got)
+			}
+			if matched && (got.Risk != .20 || got.Hard) {
+				t.Errorf("caution result = %+v, want risk .20 and not hard", got)
+			}
+		})
 	}
 }
 

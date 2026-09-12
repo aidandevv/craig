@@ -55,6 +55,22 @@ test("badge renders reverse-image evidence as a safe image pair and source URL",
 	assert.equal(source?.rel, "noopener noreferrer");
 });
 
+test("badge highlights the exact text-rule hit and renders surrounding listing text safely", () => {
+	const dom = new JSDOM("<!doctype html><html><body></body></html>");
+	renderAssessment(dom.window.document, {
+		...assessment,
+		potentially_risky: [{
+			rule: "prepayment_before_access",
+			label: "Payment requested before access",
+			text_match: { before: "Please <img src=x>", match: "PAY the deposit", after: "before your tour tomorrow" }
+		}]
+	}, false, () => undefined);
+	const shadow = dom.window.document.querySelector("#craig-extension-badge")?.shadowRoot!;
+	assert.equal(shadow.querySelector(".text-match mark")?.textContent, "PAY the deposit");
+	assert.match(shadow.querySelector(".text-match")?.textContent || "", /Please <img src=x>/);
+	assert.equal(shadow.querySelector(".text-match img"), null);
+});
+
 test("badge renders a successful legacy assessment with null empty groups", () => {
 	const dom = new JSDOM("<!doctype html><html><body></body></html>");
 	const legacyAssessment = {

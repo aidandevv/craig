@@ -146,3 +146,24 @@ func MigrateRentPriceMismatchRule(set *RuleSet) (bool, error) {
 	set.Rules["rent_price_mismatch"] = defaults.Rules["rent_price_mismatch"]
 	return true, nil
 }
+
+// MigratePrepaymentBeforeAccessRule adds the caution-only payment-before-access
+// rule when an older rules file does not already express that policy. A user
+// who has disabled or replaced it keeps their explicit choice.
+func MigratePrepaymentBeforeAccessRule(set *RuleSet) (bool, error) {
+	if set == nil {
+		return false, fmt.Errorf("rules: cannot migrate a nil rule set")
+	}
+	if _, exists := set.Rules["prepayment_before_access"]; exists {
+		return false, nil
+	}
+	defaults, err := DefaultRuleSet()
+	if err != nil {
+		return false, err
+	}
+	if set.Rules == nil {
+		set.Rules = map[string]Rule{}
+	}
+	set.Rules["prepayment_before_access"] = defaults.Rules["prepayment_before_access"]
+	return true, nil
+}

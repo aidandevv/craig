@@ -80,11 +80,14 @@ rules:
 	if _, ok := server.compiled.Rules["rent_price_mismatch"]; !ok {
 		t.Fatal("migrated price-mismatch rule is not active")
 	}
+	if _, ok := server.compiled.Rules["prepayment_before_access"]; !ok {
+		t.Fatal("migrated prepayment-before-access rule is not active")
+	}
 	raw, err := os.ReadFile(rulesPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(raw, []byte("nonstandard_rental_fee")) || !bytes.Contains(raw, []byte("high_standard_rental_fee")) || !bytes.Contains(raw, []byte("market_rent_below_hud")) || !bytes.Contains(raw, []byte("rent_price_mismatch")) {
+	if !bytes.Contains(raw, []byte("nonstandard_rental_fee")) || !bytes.Contains(raw, []byte("high_standard_rental_fee")) || !bytes.Contains(raw, []byte("market_rent_below_hud")) || !bytes.Contains(raw, []byte("rent_price_mismatch")) || !bytes.Contains(raw, []byte("prepayment_before_access")) {
 		t.Fatalf("migrated rule was not persisted: %s", raw)
 	}
 	if score := analysisScore(t, server, "A $125 application fee and admin holding fee."); score != .40 {
