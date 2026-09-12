@@ -14,6 +14,9 @@ test("extractListing normalizes a saved Craigslist listing fixture", async () =>
   assert.equal(listing.listing_url, "https://sfbay.craigslist.org/apa/d/oakland-sunny-2br/123.html");
   assert.equal(listing.title, "Sunny 2BR near the park");
   assert.equal(listing.price, 2400);
+	assert.equal(listing.rent_period, "monthly");
+	assert.equal(listing.bedrooms, 2);
+	assert.equal(listing.zip_code, "94103");
 	assert.equal(listing.posted_at, "2026-09-09T19:00:00.000Z");
   assert.equal(listing.contact.phone, "510-555-1234");
   assert.equal(listing.contact.relay_only, undefined);
@@ -33,4 +36,42 @@ test("extractListing marks an otherwise anonymous reply route as relay only", ()
 
   assert.equal(listing.contact.relay_only, true);
   assert.equal(listing.contact.phone, undefined);
+});
+
+test("extractListing does not mistake Craigslist's revealed phone control for relay-only contact", () => {
+	const dom = new JSDOM(`
+		<title>1 BD $1,795 - craigslist</title>
+		<button class="reply-button">reply</button>
+		<section id="postingbody">Call now <a class="show-contact" href="#">show contact info</a> x 12
+		OR Text 12 to <a class="show-contact" href="#">show contact info</a>.</section>
+	`, { url: "https://sfbay.craigslist.org/apa/d/san-francisco/789.html" });
+	const listing = extractListing(dom.window.document);
+
+	assert.equal(listing.contact.relay_only, undefined);
+	assert.equal(listing.contact.phone, undefined, "Craigslist reveals the number only after a user action");
+});
+
+test("extractListing recognizes a studio bedroom count", () => {
+	const dom = new JSDOM(`<title>Sunny studio near BART - craigslist</title>`, {url: "https://sfbay.craigslist.org/apa/3.html"});
+	assert.equal(extractListing(dom.window.document).bedrooms, 0);
+});
+
+test("extractListing upgrades Craigslist thumbnails and supports a single gallery photo", () => {
+  for (const html of ['<div id="thumbs"><img src="https://images.craigslist.org/room_50x50.jpg"></div>', '<div class="gallery"><img src="https://images.craigslist.org/room_600x450.jpg"></div>']) {
+    const dom=new JSDOM(`<title>Studio</title>${html}`,{url:"https://sfbay.craigslist.org/apa/1.html"});
+    assert.deepEqual(extractListing(dom.window.document).images,["https://images.craigslist.org/room_1200x900.jpg"]);
+  }
+});
+
+test("extractListing collects photos omitted by partial thumbnail links without duplicate size variants", () => {
+  const dom=new JSDOM(`<title>Studio</title>
+    <div id="thumbs"><a href="https://images.craigslist.org/a_600x450.jpg"><img src="https://images.craigslist.org/a_50x50.jpg"></a>
+    <img src="https://images.craigslist.org/b_50x50.jpg"></div>
+    <div class="gallery"><img src="https://images.craigslist.org/c_600x450.jpg"><img src="https://images.craigslist.org/a_1200x900.jpg"></div>`,
+    {url:"https://sfbay.craigslist.org/apa/1.html"});
+  assert.deepEqual(extractListing(dom.window.document).images,[
+    "https://images.craigslist.org/a_1200x900.jpg",
+    "https://images.craigslist.org/b_1200x900.jpg",
+    "https://images.craigslist.org/c_1200x900.jpg"
+  ]);
 });

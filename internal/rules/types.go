@@ -12,6 +12,8 @@ const (
 	TypeContactCheck        = "contact_check"
 	TypeImageAnalysis       = "image_analysis"
 	TypeApplicationFeeCheck = "application_fee_check"
+	TypeMarketRentCheck     = "market_rent_check"
+	TypeRentPriceMismatch   = "rent_price_mismatch"
 )
 
 // Scopes select which listing text a rule reads.
@@ -106,6 +108,15 @@ type Rule struct {
 
 	// application_fee_check
 	ApplicationFeeHighThreshold float64 `yaml:"application_fee_high_threshold" json:"application_fee_high_threshold,omitempty"`
+	FeeCheckKind                string  `yaml:"fee_check_kind" json:"fee_check_kind,omitempty"`
+
+	// market_rent_check
+	MarketRentLowRatio float64 `yaml:"market_rent_low_ratio" json:"market_rent_low_ratio,omitempty"`
+
+	// rent_price_mismatch
+	// RentPriceMismatchRatio is the minimum relative difference between the
+	// page's structured price and a dollar amount advertised in the title.
+	RentPriceMismatchRatio float64 `yaml:"rent_price_mismatch_ratio" json:"rent_price_mismatch_ratio,omitempty"`
 }
 
 // IsEnabled reports whether the rule runs. Rules are enabled unless disabled.

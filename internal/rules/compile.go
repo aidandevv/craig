@@ -41,6 +41,8 @@ var registry = map[string]factory{
 	TypePatternMatch:        newPatternMatch,
 	TypeContactCheck:        newContactCheck,
 	TypeApplicationFeeCheck: newApplicationFeeCheck,
+	TypeMarketRentCheck:     newMarketRentCheck,
+	TypeRentPriceMismatch:   newRentPriceMismatch,
 }
 
 // Compile turns a validated rule set into detectors. Rules are processed in

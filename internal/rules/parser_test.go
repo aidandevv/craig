@@ -113,6 +113,70 @@ func TestParseRejectsInvalidRuleSets(t *testing.T) {
 `,
 			wantInErr: "application_fee_high_threshold",
 		},
+		{
+			name: "nonstandard fee check has no amount threshold",
+			yaml: minimalValid + `
+  nonstandard_rental_fee:
+    type: application_fee_check
+    scope: whole_post
+    severity: risk
+    fee_check_kind: nonstandard
+    application_fee_high_threshold: 50
+`,
+			wantInErr: "must not set application_fee_high_threshold",
+		},
+		{
+			name: "application fee check rejects unknown kind",
+			yaml: minimalValid + `
+  strange_fee:
+    type: application_fee_check
+    scope: whole_post
+    severity: risk
+    fee_check_kind: strange
+    application_fee_high_threshold: 50
+`,
+			wantInErr: "fee_check_kind",
+		},
+		{
+			name: "market rent check must be caution-only",
+			yaml: minimalValid + `
+  market_rent_below_hud:
+    type: market_rent_check
+    severity: red
+    market_rent_low_ratio: 0.55
+`,
+			wantInErr: "market_rent_check must use risk severity",
+		},
+		{
+			name: "market rent check needs a bounded ratio",
+			yaml: minimalValid + `
+  market_rent_below_hud:
+    type: market_rent_check
+    severity: risk
+    market_rent_low_ratio: 1.0
+`,
+			wantInErr: "market_rent_low_ratio",
+		},
+		{
+			name: "rent price mismatch must be caution-only",
+			yaml: minimalValid + `
+  rent_price_mismatch:
+    type: rent_price_mismatch
+    severity: red
+    rent_price_mismatch_ratio: 0.10
+`,
+			wantInErr: "rent_price_mismatch must use risk severity",
+		},
+		{
+			name: "rent price mismatch needs a bounded ratio",
+			yaml: minimalValid + `
+  rent_price_mismatch:
+    type: rent_price_mismatch
+    severity: risk
+    rent_price_mismatch_ratio: 0
+`,
+			wantInErr: "rent_price_mismatch_ratio",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

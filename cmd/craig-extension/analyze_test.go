@@ -71,11 +71,17 @@ func TestAnalyzeFlagsScamAndReportsUnavailableImageChecks(t *testing.T) {
 	if got.RiskScore < .5 || got.RiskBand != "high" || !got.HardFlagged || len(got.HighRisk) == 0 {
 		t.Errorf("scam verdict = %+v", got)
 	}
-	if len(got.NotEvaluated) != 3 {
+	if len(got.NotEvaluated) != 4 {
 		t.Fatalf("not evaluated = %+v", got.NotEvaluated)
 	}
+	expectedReasons := map[string]string{
+		"market_rent_below_hud":     "market_rent_inputs_missing",
+		"mls_watermark":             "no_api_key",
+		"reverse_image_real_estate": "no_api_key",
+		"stock_photos":              "no_api_key",
+	}
 	for _, entry := range got.NotEvaluated {
-		if entry.Reason != "no_api_key" {
+		if entry.Reason != expectedReasons[entry.Rule] {
 			t.Errorf("%+v", entry)
 		}
 	}

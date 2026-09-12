@@ -135,11 +135,34 @@ func (r Rule) validate(name string) error {
 		if r.Severity != SeverityRisk || r.Hard {
 			return fail("application_fee_check must use risk severity and cannot be hard")
 		}
-		if r.ApplicationFeeHighThreshold <= 0 {
-			return fail("application_fee_check needs application_fee_high_threshold greater than zero")
+		switch r.FeeCheckKind {
+		case "", FeeCheckKindCombined, FeeCheckKindHighStandard:
+			if r.ApplicationFeeHighThreshold <= 0 {
+				return fail("application_fee_check needs application_fee_high_threshold greater than zero")
+			}
+		case FeeCheckKindNonstandard:
+			if r.ApplicationFeeHighThreshold != 0 {
+				return fail("nonstandard application_fee_check must not set application_fee_high_threshold")
+			}
+		default:
+			return fail("application_fee_check has unknown fee_check_kind %q (want nonstandard, high_standard, or combined)", r.FeeCheckKind)
+		}
+	case TypeMarketRentCheck:
+		if r.Severity != SeverityRisk || r.Hard {
+			return fail("market_rent_check must use risk severity and cannot be hard")
+		}
+		if r.MarketRentLowRatio <= 0 || r.MarketRentLowRatio >= 1 {
+			return fail("market_rent_check needs market_rent_low_ratio within (0,1)")
+		}
+	case TypeRentPriceMismatch:
+		if r.Severity != SeverityRisk || r.Hard {
+			return fail("rent_price_mismatch must use risk severity and cannot be hard")
+		}
+		if r.RentPriceMismatchRatio <= 0 || r.RentPriceMismatchRatio >= 1 {
+			return fail("rent_price_mismatch needs rent_price_mismatch_ratio within (0,1)")
 		}
 	default:
-		return fail("unknown rule type %q (want pattern_match, contact_check, image_analysis or application_fee_check)", r.Type)
+		return fail("unknown rule type %q (want pattern_match, contact_check, image_analysis, application_fee_check, market_rent_check or rent_price_mismatch)", r.Type)
 	}
 	return nil
 }

@@ -19,7 +19,16 @@ export function extractListing(document: Document): ListingPayload {
   const phone = description.match(phonePattern)?.[0];
   const email = description.match(emailPattern)?.[0];
   const replyAvailable = Boolean(document.querySelector("#replylink, .reply-button, button.reply-button"));
+	// A Craigslist Reply button is present on normal posts too. It is not
+	// evidence that messaging is the seller's *only* route when the post exposes
+	// a "show contact info" control for calling or texting. The number itself is
+	// intentionally revealed by Craigslist only after a click, so it cannot be
+	// found with phonePattern at extraction time.
+	const directContactAvailable = Boolean(phone || email || document.querySelector(
+		".show-contact, a[href^='tel:'], a[href^='mailto:']"
+	));
   const postedAt = timestampOf(document);
+	const attributes = attrGroupText(document);
 
   return compact({
     marketplace: "craigslist",
@@ -27,13 +36,17 @@ export function extractListing(document: Document): ListingPayload {
     title,
     price: priceOf(document),
     currency: "USD",
+		rent_period: rentPeriodOf(attributes),
+		bedrooms: bedroomsOf(textOf(document, ".attrgroup .shared-line-bubble") || title),
+		zip_code: zipCodeOf(`${title}\n${description}`),
     description,
     images,
     captions,
     contact: compact({
       email,
       phone,
-      relay_only: replyAvailable && !email && !phone
+		// Mark this only when there is truly no observed direct-contact route.
+		relay_only: replyAvailable && !directContactAvailable
     }),
     posted_at: postedAt
   }) as ListingPayload;
@@ -78,6 +91,20 @@ function priceOf(document: Document): number | undefined {
   return digits ? Number.parseInt(digits, 10) : undefined;
 }
 
+function rentPeriodOf(attributes: string): string | undefined {
+	return attributes.match(/\brent\s+period\s*:\s*([a-z]+)/i)?.[1]?.toLowerCase();
+}
+
+function bedroomsOf(text: string): number | undefined {
+	const bedrooms = text.match(/\b([0-4])\s*(?:br|bed(?:room)?s?)\b/i)?.[1];
+	if (bedrooms !== undefined) return Number.parseInt(bedrooms, 10);
+	return /\bstudio\b/i.test(text) ? 0 : undefined;
+}
+
+function zipCodeOf(text: string): string | undefined {
+	return text.match(/\b(\d{5})(?:-\d{4})?\b/)?.[1];
+}
+
 function timestampOf(document: Document): string | undefined {
 	const raw = document.querySelector("time.date[datetime], time[datetime]")?.getAttribute("datetime");
 	if (!raw) return undefined;
@@ -87,20 +114,18 @@ function timestampOf(document: Document): string | undefined {
 
 function imageURLs(document: Document): string[] {
   const urls = new Set<string>();
-  document.querySelectorAll<HTMLAnchorElement>("#thumbs a[href]").forEach((node) => {
-    const raw = node.href;
-    if (raw && /^https?:/i.test(raw)) {
-      urls.add(raw);
+  const add = (raw: string) => {
+    if (!/^https?:/i.test(raw)) return;
+    const url = new URL(raw);
+    if (url.hostname === "images.craigslist.org") {
+      url.pathname = url.pathname.replace(/_\d+x\d+\.(jpg|jpeg|png)$/i, "_1200x900.$1");
     }
-  });
-	if (urls.size === 0) {
-		document.querySelectorAll<HTMLImageElement>("#thumbs img[src]").forEach((node) => {
-			const raw = node.src;
-			if (raw && /^https?:/i.test(raw)) {
-				urls.add(raw);
-			}
-		});
-	}
+    urls.add(url.href);
+  };
+  // Some gallery states expose only a subset as links. Collect each source,
+  // then deduplicate after size normalization so one photo costs one check.
+  document.querySelectorAll<HTMLAnchorElement>("#thumbs a[href]").forEach((node) => add(node.href));
+  document.querySelectorAll<HTMLImageElement>("#thumbs img[src], .gallery img[src], #ci img[src]").forEach((node) => add(node.src));
   return [...urls];
 }
 

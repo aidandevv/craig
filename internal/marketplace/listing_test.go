@@ -8,9 +8,10 @@ import (
 )
 
 func TestNormalizeTrimsAndDeduplicatesAdapterOutput(t *testing.T) {
+	bedrooms := 2
 	got, err := Normalize(domain.Listing{
 		Marketplace: " Craigslist ", URL: " https://sfbay.craigslist.org/apa/1.html ",
-		Title: "  A home  ", Description: "  Bright and quiet  ", Currency: " usd ",
+		Title: "  A home  ", Description: "  Bright and quiet  ", Currency: " usd ", RentPeriod: " Monthly ", Bedrooms: &bedrooms, ZIPCode: " 94103 ",
 		Images:   []string{" https://images.example/a.jpg ", "https://images.example/a.jpg", ""},
 		Captions: []string{" kitchen ", "kitchen", ""},
 		Contact:  domain.Contact{Phone: " 510-555-1234 "},
@@ -18,7 +19,7 @@ func TestNormalizeTrimsAndDeduplicatesAdapterOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Marketplace != "craigslist" || got.Title != "A home" || got.Currency != "USD" {
+	if got.Marketplace != "craigslist" || got.Title != "A home" || got.Currency != "USD" || got.RentPeriod != "monthly" || got.ZIPCode != "94103" || got.Bedrooms == nil || *got.Bedrooms != 2 {
 		t.Errorf("normalization = %+v", got)
 	}
 	if len(got.Images) != 1 || got.Images[0] != "https://images.example/a.jpg" || len(got.Captions) != 1 {

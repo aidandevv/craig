@@ -25,6 +25,8 @@ func Normalize(input domain.Listing) (domain.Listing, error) {
 	listing.Title = strings.TrimSpace(listing.Title)
 	listing.Description = strings.TrimSpace(listing.Description)
 	listing.Currency = strings.ToUpper(strings.TrimSpace(listing.Currency))
+	listing.RentPeriod = strings.ToLower(strings.TrimSpace(listing.RentPeriod))
+	listing.ZIPCode = strings.TrimSpace(listing.ZIPCode)
 	listing.Contact.Email = strings.TrimSpace(listing.Contact.Email)
 	listing.Contact.Phone = strings.TrimSpace(listing.Contact.Phone)
 

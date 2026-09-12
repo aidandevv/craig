@@ -62,12 +62,31 @@ rules:
     scope: whole_post
     severity: green
     checks: [direct_phone_present]
-  application_fee_details:
+  nonstandard_rental_fee:
     type: application_fee_check
-    description: "Holding fee or unusually high rental fee (application, admin, processing, credit check, and similar)"
+    description: "Nonstandard hold or reservation fee"
     scope: whole_post
     severity: risk
-    application_fee_high_threshold: 100
+    fee_check_kind: nonstandard
+  high_standard_rental_fee:
+    type: application_fee_check
+    description: "Unusually high standard rental fee"
+    scope: whole_post
+    severity: risk
+    fee_check_kind: high_standard
+    application_fee_high_threshold: 50
+  market_rent_below_hud:
+    type: market_rent_check
+    description: "Listed monthly rent is far below the local HUD benchmark"
+    severity: risk
+    weight: 0.15
+    market_rent_low_ratio: 0.55
+  rent_price_mismatch:
+    type: rent_price_mismatch
+    description: "Advertised rent conflicts with the page price"
+    severity: risk
+    weight: 0.15
+    rent_price_mismatch_ratio: 0.10
   reverse_image_real_estate:
     type: image_analysis
     description: "Listing photo also appears on a real-estate site"

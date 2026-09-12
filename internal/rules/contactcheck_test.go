@@ -56,6 +56,28 @@ func TestContactCheckIgnoresOrdinaryPhoneNumbers(t *testing.T) {
 	}
 }
 
+func TestContactCheckIgnoresShortNumberedText(t *testing.T) {
+	got, err := mustContactCheck(t, "contact_evasion", contactRule(CheckObfuscatedDigits), 0.20).
+		Evaluate(context.Background(), domain.Listing{Description: "Call now x 12\nOR Text 12 to show contact info\n2\n1\n2\n3\n4\n5\n6\n7\n8\n9"})
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	if got.Risk != 0 || len(got.Flags) != 0 {
+		t.Errorf("short numbered UI text was flagged as a hidden phone number: %+v", got)
+	}
+}
+
+func TestContactCheckIgnoresPlaceholderPhoneSequence(t *testing.T) {
+	got, err := mustContactCheck(t, "contact_evasion", contactRule(CheckObfuscatedDigits), 0.20).
+		Evaluate(context.Background(), domain.Listing{Description: "2\n1\n2\n3\n4\n5\n6\n7\n8\n9"})
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	if got.Risk != 0 || len(got.Flags) != 0 {
+		t.Errorf("placeholder phone sequence was flagged: %+v", got)
+	}
+}
+
 func TestContactCheckDetectsSpelledOutDigits(t *testing.T) {
 	got, err := mustContactCheck(t, "contact_evasion", contactRule(CheckSpelledOutDigits), 0.20).
 		Evaluate(context.Background(), domain.Listing{Description: "five one zero five five five"})

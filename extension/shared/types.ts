@@ -11,6 +11,9 @@ export interface ListingPayload {
   title: string;
   price?: number;
   currency?: string;
+	rent_period?: string;
+	bedrooms?: number;
+	zip_code?: string;
   description?: string;
   images?: string[];
   captions?: string[];
@@ -38,6 +41,8 @@ export interface NotEvaluated {
 }
 
 export interface Assessment {
+  image_coverage?: { signal: string; checked: number; total: number; checked_at: string }[];
+  image_candidates?: ImageMatchEvidence[];
   risk_score: number;
   risk_band: "low" | "caution" | "elevated" | "high" | string;
   hard_flagged: boolean;

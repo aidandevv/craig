@@ -34,6 +34,11 @@ rules:
     scope: whole_post
     severity: risk
     application_fee_high_threshold: 100
+  market_rent_below_hud:
+    type: market_rent_check
+    severity: risk
+    weight: 0.15
+    market_rent_low_ratio: 0.55
   reverse_image_real_estate:
     type: image_analysis
     method: reverse_search
@@ -88,7 +93,7 @@ func TestCompileExcludesDisabledRules(t *testing.T) {
 
 func TestCompileBuildsNonImageDetectorsAndCoverage(t *testing.T) {
 	c := compileFixtureSet(t, Deps{})
-	if got, want := detectorNames(c), []string{"application_fee_details", "contact_evasion", "gift_card_payment"}; !sameStrings(got, want) {
+	if got, want := detectorNames(c), []string{"application_fee_details", "contact_evasion", "gift_card_payment", "market_rent_below_hud"}; !sameStrings(got, want) {
 		t.Errorf("detectors = %v, want %v", got, want)
 	}
 	for _, name := range []string{"contact_evasion", "gift_card_payment"} {

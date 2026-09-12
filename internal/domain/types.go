@@ -15,6 +15,9 @@ type Listing struct {
 	Title       string     `json:"title"`
 	Price       int        `json:"price,omitempty"`
 	Currency    string     `json:"currency,omitempty"`
+	RentPeriod  string     `json:"rent_period,omitempty"`
+	Bedrooms    *int       `json:"bedrooms,omitempty"`
+	ZIPCode     string     `json:"zip_code,omitempty"`
 	Description string     `json:"description,omitempty"`
 	Images      []string   `json:"images,omitempty"`
 	Captions    []string   `json:"captions,omitempty"`
@@ -34,11 +37,15 @@ type Contact struct {
 // Reasons a signal could not run. This set is closed so the UI can phrase each
 // one, and so a listing that could not be checked never renders like a clean one.
 const (
-	SkipNoAPIKey        = "no_api_key"
-	SkipBudgetExhausted = "vision_budget_exhausted"
-	SkipNoImages        = "no_images"
-	SkipMissingField    = "missing_field"
-	SkipProviderError   = "provider_error"
+	SkipNoAPIKey                       = "no_api_key"
+	SkipBudgetExhausted                = "vision_budget_exhausted"
+	SkipNoImages                       = "no_images"
+	SkipMissingField                   = "missing_field"
+	SkipMarketRentInputsMissing        = "market_rent_inputs_missing"
+	SkipMarketRentBenchmarkUnavailable = "market_rent_benchmark_unavailable"
+	SkipRentPriceInputsMissing         = "rent_price_inputs_missing"
+	SkipProviderError                  = "provider_error"
+	SkipPartialImages                  = "partial_images"
 )
 
 // SignalResult is one detector's verdict. Risk is a calibrated contribution to
@@ -47,14 +54,19 @@ const (
 // Flags carry the names of the rules that matched, which is how a detector that
 // evaluates several rules in one pass attributes its findings back to them.
 type SignalResult struct {
-	Name         string               `json:"name"`
-	Risk         float64              `json:"risk"`
-	Flags        []string             `json:"flags,omitempty"`
-	Hard         bool                 `json:"hard"`
-	Details      []string             `json:"details,omitempty"`
-	ImageMatches []ImageMatchEvidence `json:"image_matches,omitempty"`
-	Skipped      string               `json:"skipped,omitempty"`
-	LatencyMS    int64                `json:"latency_ms"`
+	Incomplete      bool                 `json:"incomplete,omitempty"`
+	Name            string               `json:"name"`
+	ImagesChecked   int                  `json:"images_checked,omitempty"`
+	ImagesTotal     int                  `json:"images_total,omitempty"`
+	CheckedAt       time.Time            `json:"checked_at,omitempty"`
+	ImageCandidates []ImageMatchEvidence `json:"image_candidates,omitempty"`
+	Risk            float64              `json:"risk"`
+	Flags           []string             `json:"flags,omitempty"`
+	Hard            bool                 `json:"hard"`
+	Details         []string             `json:"details,omitempty"`
+	ImageMatches    []ImageMatchEvidence `json:"image_matches,omitempty"`
+	Skipped         string               `json:"skipped,omitempty"`
+	LatencyMS       int64                `json:"latency_ms"`
 }
 
 // ImageMatchEvidence is a provider-returned reverse-image match attributed to

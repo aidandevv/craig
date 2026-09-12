@@ -68,15 +68,52 @@ func DefaultRuleSet() (RuleSet, error) {
 	return set, nil
 }
 
-// MigrateApplicationFeeRule adds the newly shipped fee-risk rule to an older
-// user rules file when that key is absent. It does not overwrite an existing
-// rule (including one deliberately disabled by the user), so custom policy is
-// preserved across binary upgrades.
+// MigrateApplicationFeeRule adds the two default fee cautions to older user
+// rule files. It upgrades the old embedded combined default, but leaves a
+// hand-authored combined rule untouched so custom policy is never overwritten.
 func MigrateApplicationFeeRule(set *RuleSet) (bool, error) {
 	if set == nil {
 		return false, fmt.Errorf("rules: cannot migrate a nil rule set")
 	}
-	if _, exists := set.Rules["application_fee_details"]; exists {
+	defaults, err := DefaultRuleSet()
+	if err != nil {
+		return false, err
+	}
+	if set.Rules == nil {
+		set.Rules = map[string]Rule{}
+	}
+	changed := false
+	if legacy, exists := set.Rules["application_fee_details"]; exists && isLegacyDefaultFeeRule(legacy) {
+		delete(set.Rules, "application_fee_details")
+		changed = true
+	}
+	if _, legacyExists := set.Rules["application_fee_details"]; legacyExists {
+		return changed, nil
+	}
+	for _, name := range []string{"nonstandard_rental_fee", "high_standard_rental_fee"} {
+		if _, exists := set.Rules[name]; exists {
+			continue
+		}
+		set.Rules[name] = defaults.Rules[name]
+		changed = true
+	}
+	return changed, nil
+}
+
+func isLegacyDefaultFeeRule(rule Rule) bool {
+	return rule.Type == TypeApplicationFeeCheck && rule.Severity == SeverityRisk && rule.Scope == ScopeWholePost &&
+		rule.Description == "Holding fee or unusually high rental fee (application, admin, processing, credit check, and similar)" &&
+		rule.FeeCheckKind == "" && rule.ApplicationFeeHighThreshold == 100 && rule.Weight == nil && !rule.Hard && rule.Enabled == nil
+}
+
+// MigrateMarketRentRule adds the bundled HUD market-rent rule to an older
+// rules file when its key is absent. Existing custom policy, including a
+// deliberately disabled version, is never replaced.
+func MigrateMarketRentRule(set *RuleSet) (bool, error) {
+	if set == nil {
+		return false, fmt.Errorf("rules: cannot migrate a nil rule set")
+	}
+	if _, exists := set.Rules["market_rent_below_hud"]; exists {
 		return false, nil
 	}
 	defaults, err := DefaultRuleSet()
@@ -86,6 +123,26 @@ func MigrateApplicationFeeRule(set *RuleSet) (bool, error) {
 	if set.Rules == nil {
 		set.Rules = map[string]Rule{}
 	}
-	set.Rules["application_fee_details"] = defaults.Rules["application_fee_details"]
+	set.Rules["market_rent_below_hud"] = defaults.Rules["market_rent_below_hud"]
+	return true, nil
+}
+
+// MigrateRentPriceMismatchRule adds the title-versus-page-price consistency
+// check to older editable rule files without changing a user's existing rule.
+func MigrateRentPriceMismatchRule(set *RuleSet) (bool, error) {
+	if set == nil {
+		return false, fmt.Errorf("rules: cannot migrate a nil rule set")
+	}
+	if _, exists := set.Rules["rent_price_mismatch"]; exists {
+		return false, nil
+	}
+	defaults, err := DefaultRuleSet()
+	if err != nil {
+		return false, err
+	}
+	if set.Rules == nil {
+		set.Rules = map[string]Rule{}
+	}
+	set.Rules["rent_price_mismatch"] = defaults.Rules["rent_price_mismatch"]
 	return true, nil
 }

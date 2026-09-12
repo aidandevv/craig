@@ -23,10 +23,12 @@ const (
 )
 
 var (
-	// A run of single digits split by spaces or unusual separators. Requires
-	// seven such digits, so ordinary formatting like 510-555-1234 and street
-	// numbers do not trip it.
-	reObfuscatedDigits = regexp.MustCompile(`(?:\d[\s\-–—_.·]{1,3}){6,}\d`)
+	// A run of ten single digits split by spaces or unusual separators. Requiring
+	// a full North American phone-number length keeps incidental numbered text
+	// (for example "2\n1\n2\n3\n4\n5\n6\n7\n8\n9" in a rendered widget) from
+	// being described as contact evasion, while still catching common spaced-out
+	// phone numbers such as "5 1 0 - 5 5 5 - 1 2 3 4".
+	reObfuscatedDigits = regexp.MustCompile(`(?:\d[\s\-–—_.·]{1,3}){9,}\d`)
 
 	// Three or more spelled-out digits in sequence. Two is common in prose
 	// ("two bedroom, one bath"); three in a row is someone spelling a number out.
@@ -47,7 +49,10 @@ var checkRegistry = map[string]checkFunc{
 	CheckObfuscatedDigits: {
 		needsText: true,
 		evaluate: func(_ domain.Listing, text string) (string, bool) {
-			if m := reObfuscatedDigits.FindString(text); m != "" {
+			for _, m := range reObfuscatedDigits.FindAllString(text, -1) {
+				if looksLikePlaceholderNumber(m) {
+					continue
+				}
 				return fmt.Sprintf("digits split to evade detection (%q)", strings.TrimSpace(m)), true
 			}
 			return "", false
@@ -91,6 +96,31 @@ var checkRegistry = map[string]checkFunc{
 			return "a direct email address is listed", strings.TrimSpace(l.Contact.Email) != ""
 		},
 	},
+}
+
+// looksLikePlaceholderNumber screens out ordered digit runs that frequently
+// come from sample markup, UI counters, or test fixtures rather than a real
+// contact number (for example 2 1 2 3 4 5 6 7 8 9). A long monotonic run is
+// extraordinarily unlikely in a real phone number and does not justify a
+// caution by itself.
+func looksLikePlaceholderNumber(value string) bool {
+	digits := make([]rune, 0, len(value))
+	for _, r := range value {
+		if r >= '0' && r <= '9' {
+			digits = append(digits, r)
+		}
+	}
+	for i := 0; i+5 < len(digits); i++ {
+		ascending, descending := true, true
+		for j := i + 1; j < i+6; j++ {
+			ascending = ascending && digits[j] == digits[j-1]+1
+			descending = descending && digits[j] == digits[j-1]-1
+		}
+		if ascending || descending {
+			return true
+		}
+	}
+	return false
 }
 
 func knownCheck(name string) bool {
