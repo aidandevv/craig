@@ -44,7 +44,7 @@ func newTestServer(t *testing.T, autoReload bool) (*Server, string) {
 	return server, rulesPath
 }
 
-func TestNewMigratesAnOlderRulesFileWithTheFeeRiskRule(t *testing.T) {
+func TestNewMigratesAnOlderRulesFileWithNewCautionRules(t *testing.T) {
 	rulesPath := filepath.Join(t.TempDir(), "rules.yaml")
 	legacy := `version: "1.0"
 severities: {red: 0.45, risk: 0.20, green: 0.0}
@@ -68,18 +68,55 @@ rules:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := server.compiled.Rules["application_fee_details"]; !ok {
-		t.Fatal("migrated fee rule is not active")
+	if _, ok := server.compiled.Rules["nonstandard_rental_fee"]; !ok {
+		t.Fatal("migrated nonstandard-fee rule is not active")
+	}
+	if _, ok := server.compiled.Rules["high_standard_rental_fee"]; !ok {
+		t.Fatal("migrated high-standard-fee rule is not active")
+	}
+	if _, ok := server.compiled.Rules["market_rent_below_hud"]; !ok {
+		t.Fatal("migrated market-rent rule is not active")
+	}
+	if _, ok := server.compiled.Rules["rent_price_mismatch"]; !ok {
+		t.Fatal("migrated price-mismatch rule is not active")
 	}
 	raw, err := os.ReadFile(rulesPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(raw, []byte("application_fee_details")) {
+	if !bytes.Contains(raw, []byte("nonstandard_rental_fee")) || !bytes.Contains(raw, []byte("high_standard_rental_fee")) || !bytes.Contains(raw, []byte("market_rent_below_hud")) || !bytes.Contains(raw, []byte("rent_price_mismatch")) {
 		t.Fatalf("migrated rule was not persisted: %s", raw)
 	}
-	if score := analysisScore(t, server, "A $125 application fee and admin holding fee."); score != .20 {
-		t.Errorf("fee migration score = %v, want .20", score)
+	if score := analysisScore(t, server, "A $125 application fee and admin holding fee."); score != .40 {
+		t.Errorf("fee migration score = %v, want .40", score)
+	}
+}
+
+func TestAnalyzeAddsOnlyCautionForExtremeBelowHUDMarketRent(t *testing.T) {
+	server, _ := newTestServer(t, false)
+	payload := `{"marketplace":"craigslist","listing_url":"https://sfbay.craigslist.org/apa/1.html","title":"One bedroom","price":1600,"currency":"USD","rent_period":"monthly","bedrooms":1,"zip_code":"94103"}`
+	response := serve(server, authorized(http.MethodPost, "/api/analyze", payload))
+	if response.Code != http.StatusOK {
+		t.Fatalf("analyze status = %d: %s", response.Code, response.Body.String())
+	}
+	var assessment struct {
+		RiskScore        float64 `json:"risk_score"`
+		HardFlagged      bool    `json:"hard_flagged"`
+		PotentiallyRisky []struct {
+			Rule   string  `json:"rule"`
+			Detail string  `json:"detail"`
+			Weight float64 `json:"weight"`
+		} `json:"potentially_risky"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &assessment); err != nil {
+		t.Fatal(err)
+	}
+	if assessment.RiskScore != .15 || assessment.HardFlagged || len(assessment.PotentiallyRisky) != 1 {
+		t.Fatalf("assessment = %+v", assessment)
+	}
+	finding := assessment.PotentiallyRisky[0]
+	if finding.Rule != "market_rent_below_hud" || finding.Weight != .15 || !strings.Contains(finding.Detail, "not proof of fraud") {
+		t.Errorf("market-rent finding = %+v", finding)
 	}
 }
 
@@ -291,7 +328,7 @@ func TestAutoReloadPicksUpExternalRuleEdits(t *testing.T) {
 func TestRulesSchemaAndInvalidUpdateAreReported(t *testing.T) {
 	server, _ := newTestServer(t, false)
 	schema := serve(server, authorized(http.MethodGet, "/api/rules/schema", ""))
-	if schema.Code != http.StatusOK || !strings.Contains(schema.Body.String(), "payment_no_recourse") {
+	if schema.Code != http.StatusOK || !strings.Contains(schema.Body.String(), "payment_no_recourse") || !strings.Contains(schema.Body.String(), rules.TypeMarketRentCheck) || !strings.Contains(schema.Body.String(), rules.TypeRentPriceMismatch) {
 		t.Errorf("schema response = %d %s", schema.Code, schema.Body.String())
 	}
 	invalid := `{"version":"1.0","severities":{"red":0.4,"risk":0.2,"green":0},"risk_bands":{"caution":0.3,"elevated":0.5,"high":0.7},"rules":{}}`
@@ -366,4 +403,38 @@ func yamlRules(set rules.RuleSet) ([]byte, error) {
 func strconvQuote(value string) string {
 	encoded, _ := json.Marshal(value)
 	return string(encoded)
+}
+
+func TestFreshAnalysisReachesProvider(t *testing.T) {
+	calls := 0
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; w.Write([]byte(`{"responses":[{}]}`)) }))
+	defer provider.Close()
+	store, err := cache.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	rulesPath := filepath.Join(t.TempDir(), "rules.yaml")
+	if err := config.WriteFileSecure(rulesPath, rules.DefaultRulesYAML()); err != nil {
+		t.Fatal(err)
+	}
+	vision := signals.NewVision(store, nil, signals.Options{APIKey: "test", Endpoint: provider.URL, MonthlyCap: 100})
+	server, err := New(Options{Port: 8765, Token: testToken, RulesPath: rulesPath, Vision: vision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"marketplace":"craigslist","listing_url":"https://sfbay.craigslist.org/apa/1.html","title":"Studio","images":["https://images.example/photo.jpg"]}`
+	for index, path := range []string{"/api/analyze", "/api/analyze", "/api/analyze?fresh=true"} {
+		response := serve(server, authorized(http.MethodPost, path, body))
+		if response.Code != 200 {
+			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+		}
+		want := 2
+		if index == 2 {
+			want = 4
+		}
+		if calls != want {
+			t.Fatalf("request %d calls=%d want=%d", index, calls, want)
+		}
+	}
 }

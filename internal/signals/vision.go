@@ -158,13 +158,13 @@ type imageOutcome struct {
 }
 
 // evaluateImages runs one Vision feature against every listing image. Cache
-// hits retain their original per-image result; newly processed images each
+// hits are re-scored against current rules; newly processed images each
 // reserve one unit because Vision bills per feature per image. A signal is
 // skipped only when no image could be evaluated, so a provider failure on one
 // photo cannot erase evidence found in another.
 func (v *Vision) evaluateImages(
 	ctx context.Context,
-	name, feature string, requireImageEvidence bool,
+	name, feature string,
 	groups []MatchGroup,
 	listing domain.Listing,
 	evaluate func(context.Context, string, int, int) (domain.SignalResult, error),
@@ -189,47 +189,13 @@ func (v *Vision) evaluateImages(
 			continue
 		}
 
-		hash := hashURL(imageURL)
-		if cached, found, err := v.store.Get(ctx, hash, name); err == nil && found {
-			// Reverse-image cache entries written before source provenance existed
-			// cannot power the image-pair UI. Refresh only old positive entries;
-			// clean cached checks remain free and a current evidence record stays
-			// fully cacheable.
-			if !requireImageEvidence || len(cached.Flags) == 0 || len(cached.ImageMatches) > 0 {
-				trace.Log(ctx, "vision", "%s image %d/%d: cache hit", name, position, total)
-				outcomes = append(outcomes, imageOutcome{index: position, result: cached})
-				continue
-			}
-			trace.Log(ctx, "vision", "%s image %d/%d: cached match lacks source evidence; refreshing", name, position, total)
-		} else if err != nil {
-			trace.Log(ctx, "vision", "%s image %d/%d: cache read failed; continuing", name, position, total)
-		}
-
-		allowed, err := v.store.ReserveVisionUnit(ctx, feature, v.cap)
-		if err != nil {
-			trace.Log(ctx, "vision", "%s image %d/%d skipped: could not reserve Vision budget", name, position, total)
-			outcomes = append(outcomes, imageOutcome{index: position, result: domain.SignalResult{Name: name, Skipped: domain.SkipProviderError}})
-			continue
-		}
-		if !allowed {
-			v.meter.VisionUnitSkipped(feature)
-			trace.Log(ctx, "vision", "%s image %d/%d skipped: monthly %s budget exhausted", name, position, total, feature)
-			outcomes = append(outcomes, imageOutcome{index: position, result: domain.SignalResult{Name: name, Skipped: domain.SkipBudgetExhausted}})
-			continue
-		}
-
-		v.meter.VisionUnitUsed(feature)
-		trace.Log(ctx, "vision", "%s image %d/%d: calling Google Vision %s", name, position, total, feature)
 		result, err := evaluate(ctx, imageURL, position, total)
 		if err != nil {
-			trace.Log(ctx, "vision", "%s image %d/%d skipped: provider error", name, position, total)
-			outcomes = append(outcomes, imageOutcome{index: position, result: domain.SignalResult{Name: name, Skipped: domain.SkipProviderError}})
+			trace.Log(ctx, "vision", "%s image %d/%d skipped: %s", name, position, total, skipReason(err))
+			outcomes = append(outcomes, imageOutcome{index: position, result: domain.SignalResult{Name: name, Skipped: skipReason(err)}})
 			continue
 		}
 		result.Name = name
-		if err := v.store.Put(ctx, hash, name, result); err != nil {
-			trace.Log(ctx, "vision", "%s image %d/%d: result not cached", name, position, total)
-		}
 		outcomes = append(outcomes, imageOutcome{index: position, result: result})
 	}
 	return mergeImageOutcomes(name, groups, outcomes), nil
@@ -240,7 +206,7 @@ func mergeImageOutcomes(name string, groups []MatchGroup, outcomes []imageOutcom
 	for _, group := range groups {
 		weights[group.Rule] = group
 	}
-	merged := domain.SignalResult{Name: name}
+	merged := domain.SignalResult{Name: name, ImagesTotal: len(outcomes)}
 	matched := make(map[string]bool)
 	seenEvidence := make(map[string]bool)
 	evaluated := 0
@@ -253,7 +219,16 @@ func mergeImageOutcomes(name string, groups []MatchGroup, outcomes []imageOutcom
 			}
 			continue
 		}
-		evaluated++
+		if !result.Incomplete {
+			evaluated++
+			merged.ImagesChecked++
+		} else if firstSkip == "" {
+			firstSkip = domain.SkipProviderError
+		}
+		merged.ImageCandidates = append(merged.ImageCandidates, result.ImageCandidates...)
+		if merged.CheckedAt.IsZero() || (!result.CheckedAt.IsZero() && result.CheckedAt.Before(merged.CheckedAt)) {
+			merged.CheckedAt = result.CheckedAt
+		}
 		for _, rule := range result.Flags {
 			for _, match := range result.ImageMatches {
 				if match.Rule != rule {
@@ -282,7 +257,7 @@ func mergeImageOutcomes(name string, groups []MatchGroup, outcomes []imageOutcom
 			merged.Details = append(merged.Details, fmt.Sprintf("%s: image %d — %s", rule, outcome.index, detail))
 		}
 	}
-	if evaluated == 0 {
+	if evaluated == 0 && len(merged.Flags) == 0 {
 		merged.Skipped = firstSkip
 		if merged.Skipped == "" {
 			merged.Skipped = domain.SkipProviderError
@@ -303,6 +278,27 @@ func detailForRule(result domain.SignalResult, rule string) string {
 }
 
 func (v *Vision) annotate(ctx context.Context, imageURL, feature string) (map[string]any, error) {
+	if fresh, _ := ctx.Value(freshKey{}).(bool); !fresh {
+		if data, _, found := v.store.GetEvidence(ctx, hashURL(imageURL), feature); found {
+			trace.Log(ctx, "vision", "%s: fresh provider evidence cache hit", feature)
+			return data, nil
+		}
+	}
+	budgetFeature := FeatureWebDetection
+	if feature == "TEXT_DETECTION" {
+		budgetFeature = FeatureTextDetection
+	}
+	allowed, err := v.store.ReserveVisionUnit(ctx, budgetFeature, v.cap)
+	if err != nil {
+		return nil, err
+	}
+	if !allowed {
+		v.meter.VisionUnitSkipped(budgetFeature)
+		return nil, budgetError{}
+	}
+	v.meter.VisionUnitUsed(budgetFeature)
+	trace.Log(ctx, "vision", "calling Google Vision %s", feature)
+
 	body, err := json.Marshal(map[string]any{"requests": []any{map[string]any{
 		"image":    map[string]any{"source": map[string]string{"imageUri": imageURL}},
 		"features": []any{map[string]any{"type": feature, "maxResults": 10}},
@@ -338,7 +334,86 @@ func (v *Vision) annotate(ctx context.Context, imageURL, feature string) (map[st
 	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
 		return nil, err
 	}
+	response := firstResponse(decoded)
+	if response == nil {
+		return nil, fmt.Errorf("vision missing image response")
+	}
+	if field, present := response[featureField(feature)]; present {
+		if _, ok := field.(map[string]any); !ok {
+			return nil, fmt.Errorf("vision malformed annotation")
+		}
+	}
+	if feature == "WEB_DETECTION" {
+		// Validate nested result shapes before permissive map-based extraction.
+		raw, _ := json.Marshal(response["webDetection"])
+		var web struct {
+			Pages []struct {
+				URL  string `json:"url"`
+				Full []struct {
+					URL string `json:"url"`
+				} `json:"fullMatchingImages"`
+				Partial []struct {
+					URL string `json:"url"`
+				} `json:"partialMatchingImages"`
+			} `json:"pagesWithMatchingImages"`
+			Full []struct {
+				URL string `json:"url"`
+			} `json:"fullMatchingImages"`
+			Partial []struct {
+				URL string `json:"url"`
+			} `json:"partialMatchingImages"`
+			Similar []struct {
+				URL string `json:"url"`
+			} `json:"visuallySimilarImages"`
+		}
+		if json.Unmarshal(raw, &web) != nil {
+			return nil, fmt.Errorf("vision malformed web results")
+		}
+	}
+	if _, failed := response["error"]; failed {
+		// Retain valid annotations, but never cache an error response.
+		if _, usable := response[featureField(feature)].(map[string]any); !usable {
+			return nil, fmt.Errorf("vision image annotation failed")
+		}
+		return decoded, nil
+	}
+	at := time.Now().UTC()
+	decoded["checked_at"] = at.Format(time.RFC3339Nano)
+	if err := v.store.PutEvidence(ctx, hashURL(imageURL), feature, decoded, at); err != nil {
+		trace.Log(ctx, "vision", "provider evidence cache write failed")
+	}
 	return decoded, nil
+}
+
+func featureField(feature string) string {
+	if feature == "WEB_DETECTION" {
+		return "webDetection"
+	}
+	return "fullTextAnnotation"
+}
+
+type freshKey struct{}
+
+func WithFreshImages(ctx context.Context) context.Context {
+	return context.WithValue(ctx, freshKey{}, true)
+}
+
+type budgetError struct{}
+
+func (budgetError) Error() string { return "vision budget exhausted" }
+func skipReason(err error) string {
+	if _, ok := err.(budgetError); ok {
+		return domain.SkipBudgetExhausted
+	}
+	return domain.SkipProviderError
+}
+func responseTime(data map[string]any) time.Time {
+	value, _ := data["checked_at"].(string)
+	at, _ := time.Parse(time.RFC3339Nano, value)
+	if at.IsZero() {
+		return time.Now().UTC()
+	}
+	return at
 }
 
 // validateImageURL rejects anything that is not a public http(s) resource.

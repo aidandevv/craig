@@ -227,6 +227,9 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) bool {
 func (s *Server) analyze(w http.ResponseWriter, r *http.Request) {
 	recorder := trace.NewRecorder(s.writeTraceEvent)
 	ctx := trace.WithSink(r.Context(), recorder)
+	if r.URL.Query().Get("fresh") == "true" {
+		ctx = signals.WithFreshImages(ctx)
+	}
 	trace.Log(ctx, "daemon", "accepted analysis request")
 	if err := s.maybeReload(); err != nil {
 		trace.Log(ctx, "rules", "reload failed; last known-good rules remain active")
@@ -319,7 +322,22 @@ func (s *Server) putRules(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid rules JSON: "+err.Error())
 		return
 	}
+	// Reject an invalid user payload before adding upgrade defaults. Otherwise an
+	// empty rule set could become valid merely because a newer binary has more
+	// migrations than the client knew about.
+	if err := rules.Validate(candidate); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
 	if _, err := rules.MigrateApplicationFeeRule(&candidate); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "migrate rules: "+err.Error())
+		return
+	}
+	if _, err := rules.MigrateMarketRentRule(&candidate); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "migrate rules: "+err.Error())
+		return
+	}
+	if _, err := rules.MigrateRentPriceMismatchRule(&candidate); err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "migrate rules: "+err.Error())
 		return
 	}
@@ -360,7 +378,7 @@ func (s *Server) getSchema(w http.ResponseWriter) {
 	}
 	sort.Strings(presetNames)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"rule_types":    []string{rules.TypePatternMatch, rules.TypeContactCheck, rules.TypeImageAnalysis, rules.TypeApplicationFeeCheck},
+		"rule_types":    []string{rules.TypePatternMatch, rules.TypeContactCheck, rules.TypeImageAnalysis, rules.TypeApplicationFeeCheck, rules.TypeMarketRentCheck, rules.TypeRentPriceMismatch},
 		"scopes":        []string{rules.ScopeTitle, rules.ScopeDescription, rules.ScopeCaption, rules.ScopeWholePost},
 		"severities":    []string{rules.SeverityRed, rules.SeverityRisk, rules.SeverityGreen},
 		"image_methods": []string{rules.MethodReverseSearch, rules.MethodOCR},
@@ -410,11 +428,19 @@ func loadRulesWithMigrations(path string) (rules.RuleSet, error) {
 	if err != nil {
 		return rules.RuleSet{}, err
 	}
-	changed, err := rules.MigrateApplicationFeeRule(&set)
+	feeChanged, err := rules.MigrateApplicationFeeRule(&set)
 	if err != nil {
 		return rules.RuleSet{}, fmt.Errorf("migrate rules: %w", err)
 	}
-	if !changed {
+	marketRentChanged, err := rules.MigrateMarketRentRule(&set)
+	if err != nil {
+		return rules.RuleSet{}, fmt.Errorf("migrate rules: %w", err)
+	}
+	priceMismatchChanged, err := rules.MigrateRentPriceMismatchRule(&set)
+	if err != nil {
+		return rules.RuleSet{}, fmt.Errorf("migrate rules: %w", err)
+	}
+	if !feeChanged && !marketRentChanged && !priceMismatchChanged {
 		return set, nil
 	}
 	data, err := yaml.Marshal(set)

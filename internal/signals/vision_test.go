@@ -77,7 +77,7 @@ func TestReverseImageFlagsRealEstateMatchAsHard(t *testing.T) {
 func TestReverseImageCarriesMatchingImagePreviewWhenVisionSuppliesOne(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{"responses": []any{
 		map[string]any{"webDetection": map[string]any{
-			"pagesWithMatchingImages": []any{map[string]any{"url": "https://www.zillow.com/homedetails/123"}},
+			"pagesWithMatchingImages": []any{map[string]any{"url": "https://www.zillow.com/homedetails/123", "fullMatchingImages": []any{map[string]any{"url": "https://photos.zillowstatic.com/match.jpg"}}}},
 			"fullMatchingImages":      []any{map[string]any{"url": "https://photos.zillowstatic.com/match.jpg"}},
 		}},
 	}})

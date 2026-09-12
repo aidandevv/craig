@@ -93,3 +93,27 @@ test("badge calls the options callback when configuration is needed", () => {
 	assert.equal(opened, 1);
 	assert.match(shadow.textContent || "", /Local daemon unavailable/);
 });
+
+test("badge ignores legacy visual candidates and shows incomplete photo coverage", () => {
+  const dom=new JSDOM("<body></body>");
+  renderAssessment(dom.window.document, {...assessment,
+    image_coverage:[{signal:"reverse_image",checked:1,total:2,checked_at:"2026-09-10T12:00:00Z"}],
+    image_candidates:[{listing_image_url:"https://images.example/photo.jpg",source_page_url:"https://cdn.example/candidate.jpg",source_image_url:"https://cdn.example/candidate.jpg"}],
+    not_evaluated:[{rule:"stock_photos",reason:"partial_images"}]
+  },false,()=>{});
+  const shadow=dom.window.document.getElementById("craig-extension-badge")!.shadowRoot!;
+  assert.match(shadow.textContent!,/1 of 2 photos checked/);
+  assert.doesNotMatch(shadow.textContent!,/Visually similar image/);
+  assert.match(shadow.textContent!,/this check is incomplete/);
+  assert.equal(shadow.querySelector('a[href="https://cdn.example/candidate.jpg"]'),null);
+});
+
+test("badge explains why the local HUD comparison was not evaluated", () => {
+  const dom = new JSDOM("<body></body>");
+  renderAssessment(dom.window.document, {
+    ...assessment,
+    not_evaluated: [{ rule: "market_rent_below_hud", reason: "market_rent_benchmark_unavailable" }]
+  }, false, () => undefined);
+  const shadow = dom.window.document.getElementById("craig-extension-badge")!.shadowRoot!;
+  assert.match(shadow.textContent || "", /No bundled HUD benchmark is available for this ZIP and bedroom count/);
+});

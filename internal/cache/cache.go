@@ -133,5 +133,39 @@ func (s *Store) Prune(ctx context.Context, maxAge time.Duration) (int64, error) 
 	if err != nil {
 		return 0, err
 	}
-	return res.RowsAffected()
+	legacy, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	evidence, err := s.db.ExecContext(ctx, `DELETE FROM vision_evidence_v2 WHERE checked_at < ?`, time.Now().UTC().Add(-24*time.Hour).Format(time.RFC3339Nano))
+	if err != nil {
+		return legacy, err
+	}
+	count, err := evidence.RowsAffected()
+	return legacy + count, err
+}
+
+// Provider evidence is independent of rule scoring. Legacy scored negatives
+// are deliberately never read by this cache. Expiration is enforced on reads.
+func (s *Store) GetEvidence(ctx context.Context, hash, feature string) (map[string]any, time.Time, bool) {
+	var raw, checked string
+	err := s.db.QueryRowContext(ctx, `SELECT response, checked_at FROM vision_evidence_v2 WHERE image_hash=? AND feature=?`, hash, feature).Scan(&raw, &checked)
+	at, parseErr := time.Parse(time.RFC3339Nano, checked)
+	if err != nil || parseErr != nil || time.Since(at) > 24*time.Hour {
+		return nil, time.Time{}, false
+	}
+	var data map[string]any
+	if json.Unmarshal([]byte(raw), &data) != nil {
+		return nil, time.Time{}, false
+	}
+	return data, at, true
+}
+
+func (s *Store) PutEvidence(ctx context.Context, hash, feature string, data map[string]any, at time.Time) error {
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT OR REPLACE INTO vision_evidence_v2(image_hash,feature,response,checked_at) VALUES(?,?,?,?)`, hash, feature, string(raw), at.UTC().Format(time.RFC3339Nano))
+	return err
 }

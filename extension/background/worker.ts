@@ -1,13 +1,7 @@
-import { getSessionValue, loadSettings, setSessionValue } from "../shared/storage";
+import { loadSettings } from "../shared/storage";
 import type { Assessment, ListingPayload, TraceEvent, WorkerRequest, WorkerResponse } from "../shared/types";
 
-const cachePrefix = "assessment:";
 const inFlight = new Map<string, Promise<WorkerResponse>>();
-
-interface CachedAssessment {
-	assessment: Assessment;
-	trace: TraceEvent[];
-}
 
 interface AnalyzePayload extends Assessment {
 	trace?: TraceEvent[];
@@ -38,30 +32,20 @@ chrome.runtime.onMessage.addListener((message: WorkerRequest, _sender, sendRespo
 });
 
 async function analyze(listing: ListingPayload, force: boolean): Promise<WorkerResponse> {
-	const cacheKey = cachePrefix + listing.listing_url;
-	if (!force) {
-		const cached = await getSessionValue<CachedAssessment>(cacheKey);
-		if (cached?.assessment) {
-			const trace = [...cached.trace, extensionTrace("cache", "Used the verified assessment stored for this browser session.")];
-			writeTrace(trace);
-			return { ok: true, assessment: cached.assessment, cached: true, trace };
-		}
-	}
+    // Always ask the daemon to score current rules. It caches provider evidence.
+    const cacheKey = JSON.stringify({listing, force});
 
 	const current = inFlight.get(cacheKey);
 	if (current) {
 		return current;
 	}
-	const request = requestAssessment(listing).finally(() => inFlight.delete(cacheKey));
+	const request = requestAssessment(listing, force).finally(() => inFlight.delete(cacheKey));
 	inFlight.set(cacheKey, request);
 	const response = await request;
-	if (response.ok) {
-		await setSessionValue(cacheKey, { assessment: response.assessment, trace: response.trace });
-	}
 	return response;
 }
 
-async function requestAssessment(listing: ListingPayload): Promise<WorkerResponse> {
+async function requestAssessment(listing: ListingPayload, force: boolean): Promise<WorkerResponse> {
 	const localTrace = [
 		extensionTrace("extension", `Prepared normalized listing with ${listing.images?.length || 0} image URL(s).`),
 		extensionTrace("extension", "Sending authenticated request to the local daemon.")
@@ -74,7 +58,7 @@ async function requestAssessment(listing: ListingPayload): Promise<WorkerRespons
 	}
 	const baseURL = settings.daemonUrl.replace(/\/$/, "");
 	try {
-		const response = await fetch(`${baseURL}/api/analyze`, {
+		const response = await fetch(`${baseURL}/api/analyze${force ? "?fresh=true" : ""}`, {
 			method: "POST",
 			headers: {
 				"Authorization": `Bearer ${settings.token}`,

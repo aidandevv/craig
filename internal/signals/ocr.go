@@ -33,7 +33,7 @@ func NewOCR(v *Vision, opts OCROptions) *OCR {
 func (o *OCR) Name() string { return o.name }
 
 func (o *OCR) Evaluate(ctx context.Context, listing domain.Listing) (domain.SignalResult, error) {
-	return o.vision.evaluateImages(ctx, o.name, FeatureTextDetection, false, o.groups, listing,
+	return o.vision.evaluateImages(ctx, o.name, FeatureTextDetection, o.groups, listing,
 		func(ctx context.Context, imageURL string, index, total int) (domain.SignalResult, error) {
 			data, err := o.vision.annotate(ctx, imageURL, "TEXT_DETECTION")
 			if err != nil {
@@ -42,6 +42,8 @@ func (o *OCR) Evaluate(ctx context.Context, listing domain.Listing) (domain.Sign
 			text := extractedText(data)
 			trace.Log(ctx, "vision", "%s image %d/%d: Vision OCR completed (%d characters)", o.name, index, total, len([]rune(text)))
 			result := apply(o.name, o.groups, strings.ToLower(text))
+			result.CheckedAt = responseTime(data)
+			_, result.Incomplete = firstResponse(data)["error"]
 			if len(result.Flags) > 0 {
 				result.Details = append(result.Details, "image text: "+truncate(text, 200))
 			}

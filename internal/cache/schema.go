@@ -3,6 +3,13 @@ package cache
 const schema = `
 PRAGMA journal_mode = WAL;
 PRAGMA busy_timeout = 5000;
+CREATE TABLE IF NOT EXISTS vision_evidence_v2 (
+ image_hash TEXT NOT NULL,
+ feature TEXT NOT NULL,
+ response TEXT NOT NULL,
+ checked_at TEXT NOT NULL,
+ PRIMARY KEY(image_hash, feature)
+);
 
 CREATE TABLE IF NOT EXISTS image_signal_cache (
   image_hash TEXT NOT NULL,

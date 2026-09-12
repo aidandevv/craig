@@ -129,3 +129,24 @@ func TestAssessOutputIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+func TestIncompletePhotosDoNotPassUnmatchedRules(t *testing.T) {
+	compiled := assessmentFixture()
+	compiled.Coverage["reverse_image"] = []string{"reverse_image_real_estate", "stock_photos"}
+	got := Assess([]domain.SignalResult{{Name: "reverse_image", ImagesChecked: 1, ImagesTotal: 2, Flags: []string{"reverse_image_real_estate"}, Risk: .6, Hard: true}}, compiled, 0)
+	if len(got.HighRisk) != 1 || len(got.PassedChecks) != 0 {
+		t.Fatalf("lost match or passed incomplete check: %+v", got)
+	}
+	found := false
+	for _, rule := range got.NotEvaluated {
+		if rule.Rule == "stock_photos" && rule.Reason == domain.SkipPartialImages {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing incomplete stock check: %+v", got)
+	}
+	if len(got.ImageCoverage) != 1 || got.ImageCoverage[0].Checked != 1 {
+		t.Fatalf("missing image coverage: %+v", got)
+	}
+}

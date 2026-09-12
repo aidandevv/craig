@@ -34,18 +34,28 @@ type Coverage struct {
 	Enabled int `json:"enabled"`
 }
 
+// ImageCoverage reports successful photos and the oldest evidence timestamp.
+type ImageCoverage struct {
+	Signal    string    `json:"signal"`
+	Checked   int       `json:"checked"`
+	Total     int       `json:"total"`
+	CheckedAt time.Time `json:"checked_at"`
+}
+
 // Assessment is the complete, explained verdict on one listing.
 type Assessment struct {
-	RiskScore        float64        `json:"risk_score"`
-	RiskBand         string         `json:"risk_band"`
-	HardFlagged      bool           `json:"hard_flagged"`
-	Coverage         Coverage       `json:"coverage"`
-	HighRisk         []Finding      `json:"high_risk"`
-	PotentiallyRisky []Finding      `json:"potentially_risky"`
-	PositiveSignals  []Finding      `json:"positive_signals"`
-	PassedChecks     []string       `json:"passed_checks"`
-	NotEvaluated     []NotEvaluated `json:"not_evaluated"`
-	AnalysisTimeMS   int64          `json:"analysis_time_ms"`
+	ImageCoverage    []ImageCoverage             `json:"image_coverage,omitempty"`
+	ImageCandidates  []domain.ImageMatchEvidence `json:"image_candidates,omitempty"`
+	RiskScore        float64                     `json:"risk_score"`
+	RiskBand         string                      `json:"risk_band"`
+	HardFlagged      bool                        `json:"hard_flagged"`
+	Coverage         Coverage                    `json:"coverage"`
+	HighRisk         []Finding                   `json:"high_risk"`
+	PotentiallyRisky []Finding                   `json:"potentially_risky"`
+	PositiveSignals  []Finding                   `json:"positive_signals"`
+	PassedChecks     []string                    `json:"passed_checks"`
+	NotEvaluated     []NotEvaluated              `json:"not_evaluated"`
+	AnalysisTimeMS   int64                       `json:"analysis_time_ms"`
 }
 
 // Assess places every enabled rule in exactly one bucket. In particular, it
@@ -76,6 +86,10 @@ func Assess(results []domain.SignalResult, compiled rules.Compiled, elapsed time
 
 	for _, result := range results {
 		covered := compiled.Coverage[result.Name]
+		if result.ImagesTotal > 0 {
+			a.ImageCoverage = append(a.ImageCoverage, ImageCoverage{result.Name, result.ImagesChecked, result.ImagesTotal, result.CheckedAt})
+		}
+		a.ImageCandidates = append(a.ImageCandidates, result.ImageCandidates...)
 		if len(covered) == 0 {
 			continue
 		}
@@ -94,6 +108,10 @@ func Assess(results []domain.SignalResult, compiled rules.Compiled, elapsed time
 			delete(notEvaluated, rule)
 			if matched[rule] {
 				a.add(rule, compiled, detailFor(result, rule), imageMatchesFor(result, rule))
+				continue
+			}
+			if result.ImagesChecked < result.ImagesTotal {
+				notEvaluated[rule] = domain.SkipPartialImages
 				continue
 			}
 			passed[rule] = true

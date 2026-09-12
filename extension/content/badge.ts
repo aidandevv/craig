@@ -39,6 +39,12 @@ export function renderAssessment(document: Document, assessment: Assessment, cac
 	const coverage = el(document, "p", `${assessment.coverage.ran} of ${assessment.coverage.enabled} checks ran${cached ? " · cached for this browser session" : ""}`);
 	coverage.className = "coverage";
 	panel.append(coverage);
+    for (const images of assessment.image_coverage ?? []) {
+        const at = new Date(images.checked_at);
+        const when = Number.isNaN(at.valueOf()) || at.getFullYear() < 2000 ? "" : ` · oldest check ${at.toLocaleString()}`;
+        panel.append(el(document, "p", `Cloud Vision ${images.signal}: ${images.checked} of ${images.total} photos checked${when}`));
+    }
+
 	panel.append(scoreGauge(document, score, assessment.risk_band));
 	appendFindings(document, panel, "High risk", highRisk, "danger", "Flagged", true);
 	appendFindings(document, panel, "Potentially risky", potentiallyRisky, "caution", "Caution", true);
@@ -170,9 +176,11 @@ const PASSED_CHECK_DESCRIPTIONS: Record<string, string> = {
 	obfuscated_contact: "Contact details weren't written in a disguised way, like spelled-out digits or spaced-out email addresses.",
 	relay_only_contact: "The listing isn't limited to in-app messaging only — a direct contact channel is available.",
 	direct_phone_listed: "This listing didn't include a direct phone number in the post.",
-	application_fee_details: "No holding fee, and no application, admin, processing, credit-check, or other named rental fee came in far above the typical range.",
-	reverse_image_real_estate: "None of the listing photos matched images from real-estate sites like Zillow, Redfin, or Realtor.com.",
-	stock_photos: "None of the listing photos matched known stock-photo sources like Shutterstock or Getty Images.",
+	nonstandard_rental_fee: "No hold, reservation, or similarly nonstandard fee was found.",
+	high_standard_rental_fee: "No standard rental fee exceeded its caution threshold.",
+	rent_price_mismatch: "The page price and any rent advertised in the title did not materially conflict.",
+	reverse_image_real_estate: "Cloud Vision found no matching real-estate source in the photos checked.",
+	stock_photos: "Cloud Vision found no matching stock-photo source in the photos checked.",
 	mls_watermark: "No agency or MLS watermark, like \"Coldwell\" or \"Century 21,\" was detected in the listing photos."
 };
 
@@ -310,7 +318,11 @@ function skipReason(reason: string): string {
 		no_api_key: "Needs a Google Vision API key",
 		vision_budget_exhausted: "Monthly Vision budget exhausted",
 		no_images: "Listing has no images",
+        partial_images: "Some photos could not be checked; this check is incomplete",
 		missing_field: "Listing did not include the needed field",
+		market_rent_inputs_missing: "Needs a listed monthly USD price and a studio-to-four-bedroom count",
+		market_rent_benchmark_unavailable: "No bundled HUD benchmark is available for this ZIP and bedroom count",
+		rent_price_inputs_missing: "Needs a listed page price and a title with a dollar amount",
 		provider_error: "Provider could not complete the check"
 	};
 	return labels[reason] || humanize(reason);

@@ -36,7 +36,7 @@ func NewReverseImage(v *Vision, opts ReverseImageOptions) *ReverseImage {
 func (r *ReverseImage) Name() string { return r.name }
 
 func (r *ReverseImage) Evaluate(ctx context.Context, listing domain.Listing) (domain.SignalResult, error) {
-	return r.vision.evaluateImages(ctx, r.name, FeatureWebDetection, true, r.groups, listing,
+	return r.vision.evaluateImages(ctx, r.name, FeatureWebDetection, r.groups, listing,
 		func(ctx context.Context, imageURL string, index, total int) (domain.SignalResult, error) {
 			data, err := r.vision.annotate(ctx, imageURL, "WEB_DETECTION")
 			if err != nil {
@@ -44,9 +44,12 @@ func (r *ReverseImage) Evaluate(ctx context.Context, listing domain.Listing) (do
 			}
 			matches := matchingWebEvidence(data)
 			urls := matches.urls()
-			trace.Log(ctx, "vision", "%s image %d/%d: Vision found %d matching web page URL(s)", r.name, index, total, len(urls))
+			trace.Log(ctx, "vision", "%s image %d/%d: Vision returned %d matching page(s), %d full/partial image URL(s)", r.name, index, total, len(matches.pages), len(matches.images))
 			result := apply(r.name, r.groups, strings.ToLower(strings.Join(urls, "\n")))
 			result.ImageMatches = evidenceForMatches(r.groups, imageURL, matches)
+			trace.Log(ctx, "vision", "%s image %d/%d: %d source rule(s) matched", r.name, index, total, len(result.Flags))
+			result.CheckedAt = responseTime(data)
+			_, result.Incomplete = firstResponse(data)["error"]
 			if len(urls) > 0 {
 				result.Details = append(result.Details, "matching pages: "+summarize(urls, 5))
 			}
@@ -54,80 +57,72 @@ func (r *ReverseImage) Evaluate(ctx context.Context, listing domain.Listing) (do
 		})
 }
 
-// webEvidence retains the two forms that Vision returns: the page on which it
-// found a matching image, and (when available) a matching image URL. Vision
-// does not map each page to a particular image, so a preview is presented as
-// supporting evidence rather than a claim that it came from that exact page.
+// Preserve page-specific image associations; global images have no known page.
 type webEvidence struct {
-	pages  []string
-	images []string
+	pages      []string
+	images     []string
+	pageImages map[string][]string
 }
 
 func (e webEvidence) urls() []string { return append(append([]string{}, e.pages...), e.images...) }
-
-// matchingWebEvidence flattens the relevant Web Detection response fields and
-// keeps enough structure to render a source image beside the listing image.
-func matchingWebEvidence(data map[string]any) webEvidence {
-	response := firstResponse(data)
-	if response == nil {
-		return webEvidence{}
-	}
-	detection, _ := response["webDetection"].(map[string]any)
-	if detection == nil {
-		return webEvidence{}
-	}
-	result := webEvidence{}
-	seen := map[string]bool{}
-	collect := func(key string, target *[]string) {
-		items, _ := detection[key].([]any)
-		for _, item := range items {
-			entry, _ := item.(map[string]any)
-			if value, _ := entry["url"].(string); value != "" && !seen[value] {
-				seen[value] = true
-				*target = append(*target, value)
-			}
+func imageURLsFrom(items any) []string {
+	result := []string{}
+	entries, _ := items.([]any)
+	for _, item := range entries {
+		entry, _ := item.(map[string]any)
+		value, _ := entry["url"].(string)
+		if value != "" {
+			result = append(result, value)
 		}
 	}
-	collect("pagesWithMatchingImages", &result.pages)
-	collect("fullMatchingImages", &result.images)
-	collect("partialMatchingImages", &result.images)
 	return result
 }
-
-// matchingPageURLs remains a compact helper for callers and tests that only
-// need the flattened provider URLs.
+func matchingWebEvidence(data map[string]any) webEvidence {
+	response := firstResponse(data)
+	detection, _ := response["webDetection"].(map[string]any)
+	result := webEvidence{pageImages: map[string][]string{}}
+	result.pages = imageURLsFrom(detection["pagesWithMatchingImages"])
+	result.images = append(imageURLsFrom(detection["fullMatchingImages"]), imageURLsFrom(detection["partialMatchingImages"])...)
+	pages, _ := detection["pagesWithMatchingImages"].([]any)
+	for _, item := range pages {
+		page, _ := item.(map[string]any)
+		pageURL, _ := page["url"].(string)
+		images := append(imageURLsFrom(page["fullMatchingImages"]), imageURLsFrom(page["partialMatchingImages"])...)
+		result.pageImages[pageURL] = images
+		result.images = append(result.images, images...)
+	}
+	return result
+}
 func matchingPageURLs(data map[string]any) []string { return matchingWebEvidence(data).urls() }
-
 func evidenceForMatches(groups []MatchGroup, listingImageURL string, matches webEvidence) []domain.ImageMatchEvidence {
-	urls := matches.urls()
 	evidence := []domain.ImageMatchEvidence{}
 	for _, group := range groups {
-		matchedURL := ""
-		for _, value := range urls {
-			if _, ok := group.matches(strings.ToLower(value)); ok {
-				matchedURL = value
-				break
+		for _, value := range matches.urls() {
+			if _, ok := group.matches(strings.ToLower(value)); !ok {
+				continue
 			}
-		}
-		if matchedURL == "" {
-			continue
-		}
-		sourceImage := ""
-		for _, value := range matches.images {
-			if value == matchedURL {
-				sourceImage = value
-				break
+			pageURL, imageURL := value, ""
+			if images, isPage := matches.pageImages[value]; isPage {
+				if len(images) > 0 {
+					imageURL = images[0]
+				}
+			} else {
+				imageURL = value
+				for _, page := range matches.pages {
+					for _, image := range matches.pageImages[page] {
+						if image == value {
+							pageURL = page
+							break
+						}
+					}
+					if pageURL != value {
+						break
+					}
+				}
 			}
+			evidence = append(evidence, domain.ImageMatchEvidence{Rule: group.Rule, ListingImageURL: listingImageURL, SourcePageURL: pageURL, SourceImageURL: imageURL})
+			break
 		}
-		if sourceImage == "" && len(matches.images) > 0 {
-			sourceImage = matches.images[0]
-		}
-		evidence = append(evidence, domain.ImageMatchEvidence{
-			Rule:            group.Rule,
-			ListingImageURL: listingImageURL,
-			SourcePageURL:   matchedURL,
-			SourceImageURL:  sourceImage,
-		})
 	}
 	return evidence
 }

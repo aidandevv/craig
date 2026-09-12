@@ -144,3 +144,25 @@ func TestOpenRejectsEmptyPath(t *testing.T) {
 		t.Error("expected an error for an empty cache path")
 	}
 }
+
+func TestEvidenceExpiresOnRead(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	data := map[string]any{"responses": []any{map[string]any{}}}
+	if err := store.PutEvidence(ctx, "image", "WEB_DETECTION", data, time.Now().Add(-25*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, found := store.GetEvidence(ctx, "image", "WEB_DETECTION"); found {
+		t.Fatal("expired evidence returned")
+	}
+	if err := store.PutEvidence(ctx, "image", "WEB_DETECTION", data, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, found := store.GetEvidence(ctx, "image", "WEB_DETECTION"); !found {
+		t.Fatal("fresh evidence missing")
+	}
+}
