@@ -1,0 +1,39 @@
+{
+  "name": "craig-mascot-motion",
+  "version": "1.0.0",
+  "description": "Monochrome pixel mascot loops for Craig Extension",
+  "repository": {},
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "@remotion/cli": "4.0.523",
+    "@remotion/tailwind-v4": "4.0.523",
+    "@remotion/video-matting": "^4.0.523",
+    "@remotion/whisper-webgpu": "^4.0.523",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.523",
+    "tailwindcss": "4.0.0"
+  },
+  "devDependencies": {
+    "@remotion/eslint-config-flat": "4.0.523",
+    "@types/node": "22.20.2",
+    "@types/react": "19.2.7",
+    "@types/web": "0.0.166",
+    "eslint": "9.19.0",
+    "prettier": "3.8.1",
+    "typescript": "5.9.3"
+  },
+  "scripts": {
+    "dev": "remotion studio",
+    "build": "remotion bundle",
+    "upgrade": "remotion upgrade",
+    "lint": "eslint src && tsc",
+    "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"src/**/*.test.ts\" \"scripts/**/*.test.ts\"",
+    "export": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/export-png.ts",
+    "export:idle": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/export-idle-sheet.ts"
+  },
+  "sideEffects": [
+    "*.css"
+  ]
+}
