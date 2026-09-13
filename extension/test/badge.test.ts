@@ -84,7 +84,35 @@ test("badge renders a successful legacy assessment with null empty groups", () =
 	assert.doesNotThrow(() => renderAssessment(dom.window.document, legacyAssessment, false, () => undefined));
 	const shadow = dom.window.document.querySelector("#craig-extension-badge")?.shadowRoot;
 	assert.ok(shadow);
-	assert.match(shadow.textContent || "", /73\/100 · Use High Caution/);
+	// This fixture's coverage (4 of 7 checks) is under the incomplete threshold.
+	assert.match(shadow.textContent || "", /Partial check/);
+});
+
+test("badge picks Craig's concern state from risk band, hard flag, and coverage", () => {
+	const full = { ran: 10, enabled: 10 };
+	const cases: { assessment: Assessment; heading: string }[] = [
+		{ assessment: { ...assessment, risk_band: "low", hard_flagged: false, coverage: full }, heading: "Low concern" },
+		{ assessment: { ...assessment, risk_band: "caution", hard_flagged: false, coverage: full }, heading: "Look closer" },
+		{ assessment: { ...assessment, risk_band: "elevated", hard_flagged: false, coverage: full }, heading: "Verify first" },
+		{ assessment: { ...assessment, risk_band: "high", hard_flagged: false, coverage: full }, heading: "High concern" },
+		{ assessment: { ...assessment, risk_band: "high", hard_flagged: true, coverage: full }, heading: "Scam likely" },
+		{ assessment: { ...assessment, risk_band: "low", hard_flagged: true, coverage: full }, heading: "Scam likely" },
+		{ assessment: { ...assessment, risk_band: "low", hard_flagged: false, coverage: { ran: 2, enabled: 10 } }, heading: "Partial check" },
+	];
+	for (const { assessment: caseAssessment, heading } of cases) {
+		const dom = new JSDOM("<!doctype html><html><body></body></html>");
+		renderAssessment(dom.window.document, caseAssessment, false, () => undefined);
+		const shadow = dom.window.document.querySelector("#craig-extension-badge")?.shadowRoot!;
+		assert.equal(shadow.querySelector("h2")?.textContent, heading, JSON.stringify(caseAssessment));
+	}
+});
+
+test("badge shows a Craig sprite matching the concern state, not the small brand mark", () => {
+	const dom = new JSDOM("<!doctype html><html><body></body></html>");
+	renderAssessment(dom.window.document, { ...assessment, risk_band: "high", hard_flagged: true, coverage: { ran: 10, enabled: 10 } }, false, () => undefined);
+	const shadow = dom.window.document.querySelector("#craig-extension-badge")?.shadowRoot!;
+	const mark = shadow.querySelector(".mark");
+	assert.ok(mark?.classList.contains("sprite"));
 });
 
 test("badge renders a collapsed trace with only safe event text", () => {

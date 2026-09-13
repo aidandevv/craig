@@ -2,13 +2,52 @@ import type { Assessment, Finding, NotEvaluated, TraceEvent } from "../shared/ty
 
 const hostID = "craig-extension-badge";
 
+// Rotates under the loading video so a long-running daemon call still reads as progress
+// rather than a stall. Held on the module because panelFor() rebuilds the panel's DOM on
+// every render, which would otherwise orphan a running interval.
+const LOADING_MESSAGES: readonly string[] = [
+	"Scanning for common scam patterns…",
+	"Giving this listing the side-eye…",
+	"Checking contact details and payment requests…",
+	"Sniffing out landlords who may not exist…",
+	"Comparing photos against known stock and real-estate sources…",
+	"Making sure this isn't a ghost ship of a listing…",
+	"Cross-checking the price against local rent data…",
+	"Reviewing the listing for high-pressure language…"
+];
+const LOADING_ROTATION_MS = 2200;
+let loadingRotationTimer: ReturnType<typeof setInterval> | undefined;
+
 export function renderLoading(document: Document): void {
 	const panel = panelFor(document);
 	renderHeader(panel, "Checking this listing", "Running local scam checks…");
-	panel.append(el(document, "p", "Craig Extension is asking your local daemon for an explained result."));
+
+	const visual = document.createElement("div");
+	visual.className = "loading-visual";
+	const video = document.createElement("video");
+	video.className = "loading-video";
+	video.autoplay = true;
+	video.loop = true;
+	video.muted = true;
+	video.playsInline = true;
+	video.setAttribute("aria-hidden", "true");
+	const source = videoURL();
+	if (source) video.src = source;
+	visual.append(video);
+
+	const status = el(document, "p", LOADING_MESSAGES[0]);
+	status.className = "loading-status";
+	visual.append(status);
+	panel.append(visual);
+
+	let index = 0;
+	loadingRotationTimer = setInterval(() => {
+		index = (index + 1) % LOADING_MESSAGES.length;
+		status.textContent = LOADING_MESSAGES[index];
+	}, LOADING_ROTATION_MS);
 }
 
-export function renderError(document: Document, message: string, onOpenOptions: () => void, trace: TraceEvent[] = []): void {
+export function renderError(document: Document, message: string, onOpenOptions: () => void, trace: TraceEvent[] = [], onRetry?: () => void): void {
 	const panel = panelFor(document);
 	const unreachable = message.startsWith("Could not reach the local daemon");
 	renderHeader(panel, unreachable ? "Local daemon unavailable" : "Analysis unavailable", unreachable
@@ -16,13 +55,39 @@ export function renderError(document: Document, message: string, onOpenOptions: 
 		: "The listing could not be analyzed.");
 	panel.append(el(document, "p", message));
 	appendTrace(document, panel, trace);
-	const button = el(document, "button", "Open options") as HTMLButtonElement;
-	button.type = "button";
-	button.addEventListener("click", onOpenOptions);
-	panel.append(button);
+	panel.append(actionRow(document, onOpenOptions, onRetry, "Try again"));
 }
 
-export function renderAssessment(document: Document, assessment: Assessment, cached: boolean, onOpenOptions: () => void, trace: TraceEvent[] = []): void {
+/** Craig's concern states, least to most concerning, plus one non-band state for thin evidence. */
+type ConcernState = "low" | "caution" | "elevated" | "high" | "hard-flag" | "incomplete";
+
+/** Below this fraction of enabled checks actually running, the read isn't confident enough to stand behind. */
+const INCOMPLETE_COVERAGE_RATIO = 0.7;
+
+/** A hard signal always wins — it's the strongest thing Craig found, regardless of the band or how much coverage backs it. Next, thin coverage overrides the band, since a tidy score built on a fraction of the checks isn't one to stand behind. Otherwise, the risk band speaks for itself. */
+function concernStateFor(assessment: Assessment): ConcernState {
+	if (assessment.hard_flagged) return "hard-flag";
+	const { ran, enabled } = assessment.coverage;
+	if (enabled > 0 && ran / enabled < INCOMPLETE_COVERAGE_RATIO) return "incomplete";
+	switch (assessment.risk_band) {
+		case "low": return "low";
+		case "caution": return "caution";
+		case "elevated": return "elevated";
+		case "high": return "high";
+		default: return "caution";
+	}
+}
+
+const CONCERN_COPY: Record<ConcernState, { heading: string; subheading: string }> = {
+	low: { heading: "Low concern", subheading: "No scam indicators were found." },
+	caution: { heading: "Look closer", subheading: "A few minor indicators showed up — worth a look." },
+	elevated: { heading: "Verify first", subheading: "Several indicators point to risk here." },
+	high: { heading: "High concern", subheading: "Scam indicators, not proof — proceed carefully." },
+	"hard-flag": { heading: "Scam likely", subheading: "Hard signal found." },
+	incomplete: { heading: "Partial check", subheading: "Too few checks ran to give a confident read." }
+};
+
+export function renderAssessment(document: Document, assessment: Assessment, cached: boolean, onOpenOptions: () => void, trace: TraceEvent[] = [], onRecheck?: () => void): void {
 	const panel = panelFor(document);
 	const score = Math.round(Math.max(0, Math.min(1, assessment.risk_score)) * 100);
 	// Current daemons emit empty result groups as [], but retain this boundary
@@ -34,7 +99,9 @@ export function renderAssessment(document: Document, assessment: Assessment, cac
 	const positiveSignals = assessment.positive_signals ?? [];
 	const passedChecks = assessment.passed_checks ?? [];
 	const notEvaluated = assessment.not_evaluated ?? [];
-	renderHeader(panel, `${score}/100 · ${bandLabel(assessment.risk_band)}`, assessment.hard_flagged ? "Hard signal found" : "Scam indicators, not proof");
+	const concern = concernStateFor(assessment);
+	const { heading, subheading } = CONCERN_COPY[concern];
+	renderHeader(panel, heading, subheading, concernSpriteURL(concern));
 
 	const coverage = el(document, "p", `${assessment.coverage.ran} of ${assessment.coverage.enabled} checks ran${cached ? " · cached for this browser session" : ""}`);
 	coverage.className = "coverage";
@@ -53,14 +120,69 @@ export function renderAssessment(document: Document, assessment: Assessment, cac
 	appendNotEvaluated(document, panel, notEvaluated);
 	appendTrace(document, panel, trace);
 
+	panel.append(actionRow(document, onOpenOptions, onRecheck, "Check again"));
+}
+
+/** The controls at the foot of a panel: an optional re-run, then Settings. */
+function actionRow(document: Document, onOpenOptions: () => void, onRerun: (() => void) | undefined, rerunLabel: string): HTMLElement {
+	const actions = document.createElement("div");
+	actions.className = "actions";
+	if (onRerun) {
+		const again = el(document, "button", rerunLabel) as HTMLButtonElement;
+		again.type = "button";
+		again.className = "recheck";
+		again.title = "Run every check again and refresh the photo results";
+		again.addEventListener("click", onRerun);
+		actions.append(again);
+	}
 	const settings = el(document, "button", "Settings") as HTMLButtonElement;
 	settings.type = "button";
 	settings.className = "settings";
 	settings.addEventListener("click", onOpenOptions);
-	panel.append(settings);
+	actions.append(settings);
+	return actions;
+}
+
+/** The packaged mark, when the extension runtime is present. Absent under test. */
+function markURL(): string {
+	return runtimeAssetURL("assets/craig-icon-48.png");
+}
+
+/** Sprite filenames, one per concern state, exported from mascot-motion under these same names. */
+const CONCERN_SPRITE_FILE: Record<ConcernState, string> = {
+	low: "craig-low-concern.png",
+	caution: "craig-caution.png",
+	elevated: "craig-elevated-concern.png",
+	high: "craig-high-concern.png",
+	"hard-flag": "craig-hard-flag.png",
+	incomplete: "craig-incomplete.png"
+};
+
+/** The full-body concern sprite, when the extension runtime is present. Absent under test. */
+function concernSpriteURL(state: ConcernState): string {
+	return runtimeAssetURL(`assets/${CONCERN_SPRITE_FILE[state]}`);
+}
+
+/** The loading video, when the extension runtime is present. Absent under test. */
+function videoURL(): string {
+	return runtimeAssetURL("assets/peek-search.mp4");
+}
+
+function runtimeAssetURL(path: string): string {
+	try {
+		return typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL
+			? chrome.runtime.getURL(path)
+			: "";
+	} catch {
+		return "";
+	}
 }
 
 function panelFor(document: Document): HTMLElement {
+	if (loadingRotationTimer !== undefined) {
+		clearInterval(loadingRotationTimer);
+		loadingRotationTimer = undefined;
+	}
 	let host = document.getElementById(hostID) as HTMLElement | null;
 	if (!host) {
 		host = document.createElement("aside");
@@ -77,11 +199,15 @@ function panelFor(document: Document): HTMLElement {
 	return panel;
 }
 
-function renderHeader(panel: HTMLElement, title: string, subtitle: string): void {
+function renderHeader(panel: HTMLElement, title: string, subtitle: string, spriteURL?: string): void {
 	const document = panel.ownerDocument;
 	const eyebrow = el(document, "span", "CRAIG EXTENSION");
 	eyebrow.className = "eyebrow";
-	panel.append(eyebrow, el(document, "h2", title), el(document, "p", subtitle));
+	const mark = document.createElement("div");
+	mark.className = spriteURL !== undefined ? "mark sprite" : "mark";
+	if (spriteURL) mark.style.backgroundImage = `url("${spriteURL}")`;
+	mark.setAttribute("aria-hidden", "true");
+	panel.append(mark, eyebrow, el(document, "h2", title), el(document, "p", subtitle));
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -319,16 +445,6 @@ function el(document: Document, tag: string, text: string): HTMLElement {
 	return element;
 }
 
-function bandLabel(band: string): string {
-	const labels: Record<string, string> = {
-		low: "Looks Safe",
-		caution: "Use Caution",
-		elevated: "Use High Caution",
-		high: "Avoid"
-	};
-	return labels[band] || `${band.charAt(0).toUpperCase()}${band.slice(1)} risk`;
-}
-
 function humanize(value: string): string {
 	return value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
@@ -350,17 +466,24 @@ function skipReason(reason: string): string {
 
 function style(document: Document): HTMLStyleElement {
 	const element = document.createElement("style");
+	const mark = markURL();
 	element.textContent = `
     :host { all: initial; }
-	    .panel { box-sizing: border-box; position: fixed; z-index: 2147483647; top: 20px; right: 20px; width: min(430px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: auto; padding: 16px; border: 1px solid #cfd4da; border-radius: 4px; background: #ffffff; color: #272b30; box-shadow: 0 12px 34px rgba(24, 34, 48, .18); font: 14px/1.45 system-ui, sans-serif; }
-	    .eyebrow { display: block; margin-bottom: 6px; color: #52677f; font-size: 10px; font-weight: 800; letter-spacing: .12em; }
-	    h2 { margin: 0; font-size: 20px; line-height: 1.2; } p { margin: 7px 0 12px; color: #52606f; } .coverage { color: #2f455d; font-weight: 700; }
-	    .gauge { display: flex; justify-content: center; margin: 2px 0 6px; color: #4475a6; } .gauge-svg { width: 168px; height: 130px; } .gauge-track { fill: none; stroke: #e7ebf0; stroke-width: 14; stroke-linecap: round; } .gauge-progress { fill: none; stroke: currentColor; stroke-width: 14; stroke-linecap: round; } .gauge-value { fill: currentColor; font-size: 34px; font-weight: 800; font-family: inherit; } .gauge.low { color: #2f8a35; } .gauge.caution { color: #9a6714; } .gauge.elevated { color: #b2571f; } .gauge.high { color: #b23a38; }
-	    .group-heading { margin: 16px 0 7px; color: #4a5158; font-size: 12px; font-weight: 800; letter-spacing: .01em; text-transform: uppercase; }
-	    .check-case { margin-top: 8px; border: 1px solid #d5d9de; border-radius: 2px; background: #fff; } .check-case summary { display: flex; align-items: center; gap: 10px; padding: 10px 11px; cursor: pointer; background: #f8f9fa; font-weight: 750; list-style: none; } .check-case summary::-webkit-details-marker { display: none; } .check-case[open] summary { border-bottom: 1px solid #d5d9de; } .case-title { min-width: 0; color: #26313d; } .case-state { margin-left: auto; color: #56616d; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-align: right; text-transform: uppercase; } .check-case.danger .case-title, .check-case.danger .case-state { color: #b23a38; } .check-case.caution .case-title, .check-case.caution .case-state { color: #9a6714; } .check-case.positive .case-title, .check-case.positive .case-state { color: #2f8a35; }
-	    .case-body { padding: 10px 11px 11px; } .case-body > p { margin: 0; color: #4e5a66; font-size: 13px; } .text-match, .image-match { margin-top: 11px; padding-top: 10px; border-top: 1px solid #e2e5e8; } .text-match > p, .image-match > p { margin: 0 0 7px; color: #36424e; font-size: 12px; font-weight: 800; } .text-excerpt { margin: 0 !important; color: #4e5a66; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; } mark { padding: 1px 3px; border-radius: 2px; background: #ffe08a; color: #312400; font-weight: 800; } .image-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } figure { min-width: 0; margin: 0; } figure img { display: block; width: 100%; aspect-ratio: 4 / 3; border: 1px solid #d5d9de; background: #f2f3f5; object-fit: cover; } figcaption { margin-top: 4px; color: #596572; font-size: 11px; } .image-unavailable { display: flex; align-items: center; box-sizing: border-box; min-height: 96px; margin: 0; padding: 8px; border: 1px dashed #cbd1d7; color: #66727d; font-size: 11px; } .match-source { display: block; overflow-wrap: anywhere; color: #2168a8; font-size: 12px; text-decoration: underline; }
-	    .trace { clear: both; } .trace-note { margin: 0 0 8px !important; font-size: 12px !important; } pre { max-height: 230px; overflow: auto; margin: 8px 0 0; padding: 10px; border-radius: 2px; background: #172434; color: #dce9f5; font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
-	    button { margin-top: 14px; padding: 7px 10px; border: 1px solid #9eabb9; border-radius: 3px; background: #f8fafc; color: #233b54; cursor: pointer; font: inherit; font-weight: 700; } button:hover { background: #edf3f8; } .settings { display: block; margin-left: auto; }
+    .panel { box-sizing: border-box; position: fixed; z-index: 2147483647; top: 20px; right: 20px; width: min(430px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: auto; padding: 18px; border: 2px solid #0c0e0d; background: #f8faf7; color: #0c0e0d; box-shadow: 8px 8px 0 rgba(12, 14, 13, .14); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    .mark { float: right; width: 26px; height: 26px; margin: 0 0 8px 12px; background-repeat: no-repeat; background-size: 26px 26px; background-position: center; image-rendering: pixelated; ${mark ? `background-image: url("${mark}");` : ""} }
+    .mark.sprite { width: 64px; height: 91px; background-size: 64px 91px; }
+    .eyebrow { display: block; margin-bottom: 9px; color: #313631; font: 700 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .14em; }
+    h2 { margin: 0; font-size: 22px; line-height: 1.15; letter-spacing: -.02em; } p { margin: 8px 0 12px; color: #313631; }
+    .coverage { margin: 13px 0; padding: 9px 0; border-top: 2px solid #0c0e0d; border-bottom: 1px solid #c9cec8; color: #0c0e0d; font: 600 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .loading-visual { display: flex; flex-direction: column; align-items: center; margin: 4px 0 6px; }
+    .loading-video { width: 160px; height: 229px; object-fit: contain; }
+    .loading-status { min-height: 34px; margin: 6px 0 0; color: #0c0e0d; font: 700 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .02em; text-align: center; }
+    .gauge { display: flex; justify-content: center; margin: 4px 0 10px; color: #0c0e0d; } .gauge-svg { width: 168px; height: 130px; } .gauge-track { fill: none; stroke: #c9cec8; stroke-width: 12; } .gauge-progress { fill: none; stroke: currentColor; stroke-width: 12; } .gauge-value { fill: currentColor; font: 800 34px/1 ui-monospace, SFMono-Regular, Menlo, monospace; } .gauge.low { color: #2f8a35; } .gauge.caution { color: #9a6714; } .gauge.elevated { color: #b2571f; } .gauge.high { color: #b23a38; }
+    .group-heading { margin: 18px 0 9px; padding-top: 11px; border-top: 2px solid #0c0e0d; color: #0c0e0d; font: 700 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .1em; text-transform: uppercase; }
+    .check-case { margin-top: 8px; border: 1px solid #0c0e0d; background: #f8faf7; } .check-case summary { display: flex; align-items: center; gap: 10px; padding: 10px 11px; cursor: pointer; font-weight: 650; list-style: none; } .check-case summary::-webkit-details-marker { display: none; } .check-case summary:focus-visible { outline: 2px solid #0c0e0d; outline-offset: 2px; } .check-case[open] summary { border-bottom: 1px solid #0c0e0d; } .case-title { min-width: 0; } .case-state { margin-left: auto; padding: 2px 6px; border: 1px solid #0c0e0d; font: 700 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .06em; text-align: right; text-transform: uppercase; } .check-case.danger { border-color: #b23a38; } .check-case.danger[open] summary { border-bottom-color: #b23a38; } .check-case.danger .case-state { background: #b23a38; color: #f8faf7; border-color: #b23a38; } .check-case.caution { border-color: #9a6714; } .check-case.caution[open] summary { border-bottom-color: #9a6714; } .check-case.caution .case-state { background: #9a6714; color: #f8faf7; border-color: #9a6714; } .check-case.positive { border-color: #2f8a35; } .check-case.positive[open] summary { border-bottom-color: #2f8a35; } .check-case.positive .case-state { border-style: dashed; border-color: #2f8a35; color: #2f8a35; }
+    .case-body { padding: 11px; } .case-body > p { margin: 0; color: #313631; font-size: 13px; } .text-match, .image-match { margin-top: 11px; padding-top: 11px; border-top: 1px solid #c9cec8; } .text-match > p, .image-match > p { margin: 0 0 7px; font: 700 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .06em; text-transform: uppercase; } .text-excerpt { margin: 0 !important; color: #313631; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; } mark { padding: 1px 4px; background: #0c0e0d; color: #f8faf7; font-weight: 700; } .image-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } figure { min-width: 0; margin: 0; } figure img { display: block; width: 100%; aspect-ratio: 4 / 3; border: 1px solid #0c0e0d; background: #c9cec8; object-fit: cover; } figcaption { margin-top: 5px; color: #313631; font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; } .image-unavailable { display: flex; align-items: center; box-sizing: border-box; min-height: 96px; margin: 0; padding: 8px; border: 1px dashed #0c0e0d; color: #313631; font-size: 11px; } .match-source { display: block; overflow-wrap: anywhere; color: #0c0e0d; font-size: 12px; text-decoration: underline; }
+    .trace { clear: both; } .trace-note { margin: 0 0 8px !important; font-size: 12px !important; } pre { max-height: 230px; overflow: auto; margin: 8px 0 0; padding: 11px; background: #0c0e0d; color: #f8faf7; font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+    .actions { display: flex; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 2px solid #0c0e0d; } button { padding: 9px 12px; border: 2px solid #0c0e0d; background: #f8faf7; color: #0c0e0d; cursor: pointer; font: 700 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .06em; text-transform: uppercase; } button:hover { background: #0c0e0d; color: #f8faf7; } button:focus-visible { outline: 2px solid #0c0e0d; outline-offset: 2px; } .recheck { background: #0c0e0d; color: #f8faf7; } .recheck:hover { background: #f8faf7; color: #0c0e0d; } .settings { margin-left: auto; }
   `;
 	return element;
 }

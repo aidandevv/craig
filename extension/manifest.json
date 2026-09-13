@@ -3,7 +3,10 @@
   "name": "Craig Extension",
   "version": "0.1.0",
   "description": "Local-first, explainable scam indicators for Craigslist listings.",
-  "permissions": ["activeTab", "storage"],
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
   "host_permissions": [
     "http://127.0.0.1/*",
     "http://localhost/*",
@@ -14,7 +17,13 @@
     "service_worker": "dist/background/worker.js"
   },
   "action": {
-    "default_title": "Analyze this Craigslist listing"
+    "default_title": "Analyze this Craigslist listing",
+    "default_icon": {
+      "16": "assets/craig-icon-16.png",
+      "32": "assets/craig-icon-32.png",
+      "48": "assets/craig-icon-48.png",
+      "128": "assets/craig-icon-128.png"
+    }
   },
   "content_scripts": [
     {
@@ -22,9 +31,35 @@
         "http://*.craigslist.org/*",
         "https://*.craigslist.org/*"
       ],
-      "js": ["dist/content/main.js"],
+      "js": [
+        "dist/content/main.js"
+      ],
       "run_at": "document_idle"
     }
   ],
-  "options_page": "dist/options/index.html"
+  "options_page": "dist/options/index.html",
+  "icons": {
+    "16": "assets/craig-icon-16.png",
+    "32": "assets/craig-icon-32.png",
+    "48": "assets/craig-icon-48.png",
+    "128": "assets/craig-icon-128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "assets/craig-icon-48.png",
+        "assets/peek-search.mp4",
+        "assets/craig-low-concern.png",
+        "assets/craig-caution.png",
+        "assets/craig-elevated-concern.png",
+        "assets/craig-high-concern.png",
+        "assets/craig-hard-flag.png",
+        "assets/craig-incomplete.png"
+      ],
+      "matches": [
+        "http://*.craigslist.org/*",
+        "https://*.craigslist.org/*"
+      ]
+    }
+  ]
 }
