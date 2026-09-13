@@ -1,4 +1,5 @@
 import { loadSettings, saveSettings } from "../shared/storage";
+import { detectDaemon as detectLocalDaemon, validateDaemonURL } from "./daemon-client";
 import { createPatternRule, isBuilderRule, uniqueRuleName, updatePattern, valuesFor, type PatternValues, type Rule, type RuleSchema, type RuleSet } from "./rule-model";
 
 const form = document.querySelector<HTMLFormElement>("#settings")!;
@@ -6,7 +7,15 @@ const daemonURL = document.querySelector<HTMLInputElement>("#daemon-url")!;
 const token = document.querySelector<HTMLInputElement>("#token")!;
 const autoRun = document.querySelector<HTMLInputElement>("#auto-run")!;
 const settingsStatus = document.querySelector<HTMLElement>("#settings-status")!;
+const detectDaemonButton = document.querySelector<HTMLButtonElement>("#detect-daemon")!;
 const testConnection = document.querySelector<HTMLButtonElement>("#test-connection")!;
+const daemonIdentity = document.querySelector<HTMLElement>("#daemon-identity")!;
+const daemonIdentityTitle = document.querySelector<HTMLElement>("#daemon-identity-title")!;
+const daemonID = document.querySelector<HTMLElement>("#daemon-id")!;
+
+const visionForm = document.querySelector<HTMLFormElement>("#vision-settings")!;
+const visionAPIKey = document.querySelector<HTMLInputElement>("#vision-api-key")!;
+const visionStatus = document.querySelector<HTMLElement>("#vision-status")!;
 
 const loadRulesButton = document.querySelector<HTMLButtonElement>("#load-rules")!;
 const ruleEditor = document.querySelector<HTMLElement>("#rule-editor")!;
@@ -29,6 +38,11 @@ form.addEventListener("submit", (event) => {
 	void save();
 });
 testConnection.addEventListener("click", () => void checkDaemon());
+detectDaemonButton.addEventListener("click", () => void findDaemon());
+visionForm.addEventListener("submit", (event) => {
+	event.preventDefault();
+	void saveVisionAPIKey();
+});
 loadRulesButton.addEventListener("click", () => void loadRules());
 reloadRulesButton.addEventListener("click", () => void loadRules());
 saveRulesButton.addEventListener("click", () => void saveRules());
@@ -42,6 +56,9 @@ async function restore(): Promise<void> {
 	daemonURL.value = settings.daemonUrl;
 	token.value = settings.token;
 	autoRun.checked = settings.autoRun;
+	if (settings.daemonId) showDaemonIdentity(settings.daemonId, false);
+	await findDaemon(false);
+	if (settings.token.trim()) await refreshVisionStatus();
 }
 
 async function save(): Promise<void> {
@@ -51,27 +68,95 @@ async function save(): Promise<void> {
 		return;
 	}
 	if (!token.value.trim()) {
-		setSettingsStatus("Paste the bearer token from `craig-extension config token`.", true);
+		setSettingsStatus("Paste the connection code from Craig's first-time setup.", true);
 		return;
 	}
-	await saveSettings({ daemonUrl: normalizedURL, token: token.value.trim(), autoRun: autoRun.checked });
+	const current = await loadSettings();
+	await saveSettings({
+		daemonUrl: normalizedURL,
+		daemonId: current.daemonUrl === normalizedURL ? current.daemonId : "",
+		token: token.value.trim(),
+		autoRun: autoRun.checked
+	});
 	daemonURL.value = normalizedURL;
-	setSettingsStatus("Settings saved. Manual analysis always refreshes the current listing.");
+	if (await refreshVisionStatus()) {
+		setSettingsStatus("Craig is connected. Manual analysis always refreshes the current listing.");
+	} else {
+		setSettingsStatus("Craig saved this code, but the helper did not accept it. Check the code and try again.", true);
+	}
 }
 
 async function checkDaemon(): Promise<void> {
 	const normalizedURL = validateDaemonURL(daemonURL.value);
 	if (!normalizedURL) {
-		setSettingsStatus("Use a localhost URL before testing the daemon.", true);
+		setSettingsStatus("Use a local Craig helper address before checking it.", true);
 		return;
 	}
-	setSettingsStatus("Checking local daemon…");
+	setSettingsStatus("Checking Craig helper…");
 	try {
 		const response = await fetch(`${normalizedURL}/healthz`, { signal: AbortSignal.timeout(4_000) });
 		if (!response.ok) throw new Error(`HTTP ${response.status}`);
-		setSettingsStatus("Local daemon is running.");
+		const health = await response.json() as { status?: string; daemon_id?: string };
+		if (health.status !== "ok") throw new Error("unexpected health response");
+		const settings = await loadSettings();
+		await saveSettings({ ...settings, daemonUrl: normalizedURL, daemonId: typeof health.daemon_id === "string" ? health.daemon_id : "" });
+		daemonURL.value = normalizedURL;
+		showDaemonIdentity(typeof health.daemon_id === "string" ? health.daemon_id : "", true);
+		setSettingsStatus("Craig helper is ready.");
 	} catch {
-		setSettingsStatus("Could not reach the local daemon. Start it with `craig-extension daemon`.", true);
+		setSettingsStatus("Craig could not reach that helper. Make sure it is running, then try again.", true);
+	}
+}
+
+async function findDaemon(announce = true): Promise<void> {
+	if (announce) setSettingsStatus("Looking for Craig helper on this computer…");
+	const settings = await loadSettings();
+	const detected = await detectLocalDaemon(settings.daemonUrl);
+	if (!detected) {
+		if (announce) setSettingsStatus("Craig helper was not found. Start it, then choose Find Craig helper again.", true);
+		return;
+	}
+	await saveSettings({ ...settings, daemonUrl: detected.url, daemonId: detected.daemonID });
+	daemonURL.value = detected.url;
+	showDaemonIdentity(detected.daemonID, true);
+	if (announce) {
+		setSettingsStatus(detected.daemonID ? "Craig helper found and ready to connect." : "Craig helper found. Update it to show its helper ID.");
+	}
+}
+
+async function saveVisionAPIKey(): Promise<void> {
+	const apiKey = visionAPIKey.value.trim();
+	if (!apiKey) {
+		setVisionStatus("Enter a Google Cloud Vision API key to enable photo checks.", true);
+		return;
+	}
+	setVisionStatus("Saving photo-check key to your Craig helper…");
+	try {
+		const response = await requestDaemon<{ ok: boolean; google_vision: boolean }>("/api/vision", {
+			method: "PUT",
+			body: JSON.stringify({ api_key: apiKey })
+		});
+		visionAPIKey.value = "";
+		setVisionStatus(response.google_vision ? "Photo checks are enabled on this Craig helper." : "The key was saved, but photo checks are not ready yet.", !response.google_vision);
+	} catch (error) {
+		setVisionStatus(messageFor(error), true);
+	}
+}
+
+async function refreshVisionStatus(): Promise<boolean> {
+	try {
+		const response = await requestDaemon<{ daemon_id?: string; providers?: { google_vision?: boolean } }>("/api/config");
+		if (response.daemon_id) {
+			const settings = await loadSettings();
+			await saveSettings({ ...settings, daemonId: response.daemon_id });
+			showDaemonIdentity(response.daemon_id, true);
+		}
+		setVisionStatus(response.providers?.google_vision ? "Photo checks are enabled on this Craig helper." : "Photo checks are off. Add a Google Cloud Vision key to enable them.");
+		return true;
+	} catch {
+		// Connection status is already reported by the setup form; do not show an
+		// alarming Vision error before the user has entered a connection code.
+		return false;
 	}
 }
 
@@ -219,7 +304,7 @@ async function requestDaemon<T>(path: string, init: RequestInit = {}): Promise<T
 	const settings = await loadSettings();
 	const baseURL = validateDaemonURL(settings.daemonUrl);
 	if (!baseURL || !settings.token.trim()) {
-		throw new Error("Save a localhost daemon URL and bearer token before loading rules.");
+		throw new Error("Connect Craig with a local helper and connection code first.");
 	}
 	const headers = new Headers(init.headers);
 	headers.set("Authorization", `Bearer ${settings.token}`);
@@ -276,19 +361,20 @@ function requireSchema(): RuleSchema {
 	return ruleSchema;
 }
 
-function validateDaemonURL(value: string): string | undefined {
-	try {
-		const parsed = new URL(value.trim());
-		if (parsed.protocol !== "http:" || (parsed.hostname !== "127.0.0.1" && parsed.hostname !== "localhost")) return undefined;
-		return parsed.toString().replace(/\/$/, "");
-	} catch {
-		return undefined;
-	}
-}
-
 function setSettingsStatus(message: string, error = false): void {
 	settingsStatus.textContent = message;
 	settingsStatus.style.color = error ? "#ad3935" : "#28643c";
+}
+
+function setVisionStatus(message: string, error = false): void {
+	visionStatus.textContent = message;
+	visionStatus.style.color = error ? "#ad3935" : "#28643c";
+}
+
+function showDaemonIdentity(id: string, found: boolean): void {
+	daemonIdentity.hidden = false;
+	daemonIdentityTitle.textContent = found ? "Craig helper found" : "Last connected Craig helper";
+	daemonID.textContent = id || "Not available — update Craig helper";
 }
 
 function setRulesStatus(message: string, error = false): void {
