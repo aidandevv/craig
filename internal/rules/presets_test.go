@@ -47,7 +47,7 @@ func TestMigrateMarketRentRuleAddsOnlyWhenMissing(t *testing.T) {
 	if err != nil || !changed {
 		t.Fatalf("migration changed=%v err=%v", changed, err)
 	}
-	if got := set.Rules["market_rent_below_hud"]; got.Type != TypeMarketRentCheck || got.Severity != SeverityRisk || got.Hard || got.MarketRentLowRatio != .55 {
+	if got := set.Rules["market_rent_below_hud"]; got.Type != TypeMarketRentCheck || got.Severity != SeverityRisk || got.Hard || got.MarketRentLowRatio != .65 {
 		t.Errorf("migrated rule = %+v", got)
 	}
 

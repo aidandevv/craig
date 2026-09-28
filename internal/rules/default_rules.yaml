@@ -86,7 +86,7 @@ rules:
     description: "Listed monthly rent is far below the local HUD benchmark"
     severity: risk
     weight: 0.15
-    market_rent_low_ratio: 0.55
+    market_rent_low_ratio: 0.65
   rent_price_mismatch:
     type: rent_price_mismatch
     description: "Advertised rent conflicts with the page price"
