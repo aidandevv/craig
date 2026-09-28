@@ -18,7 +18,6 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 
-	"github.com/aidandevv/craig-extension/internal/cache"
 	"github.com/aidandevv/craig-extension/internal/detect"
 	"github.com/aidandevv/craig-extension/internal/domain"
 	"github.com/aidandevv/craig-extension/internal/trace"
@@ -47,6 +46,15 @@ type NopMeter struct{}
 func (NopMeter) VisionUnitUsed(string)    {}
 func (NopMeter) VisionUnitSkipped(string) {}
 
+// EvidenceStore persists provider evidence and the monthly unit ledger. The
+// daemon backs it with SQLite; the browser build backs it with extension
+// storage. Implementations must be safe for concurrent use.
+type EvidenceStore interface {
+	GetEvidence(ctx context.Context, hash, feature string) (map[string]any, time.Time, bool)
+	PutEvidence(ctx context.Context, hash, feature string, data map[string]any, at time.Time) error
+	ReserveVisionUnit(ctx context.Context, feature string, monthlyCap int) (bool, error)
+}
+
 // Options configures the Vision client. Credentials come from the caller, never
 // from the environment directly, so the config file stays the single source of
 // truth for what this tool is allowed to talk to.
@@ -61,7 +69,7 @@ type Options struct {
 // Vision is a thin REST client. REST rather than the SDK keeps it testable
 // against an httptest server and keeps the dependency surface small.
 type Vision struct {
-	store    *cache.Store
+	store    EvidenceStore
 	meter    Meter
 	endpoint string
 	apiKey   string
@@ -72,7 +80,7 @@ type Vision struct {
 
 // NewVision builds a client. It never fails on missing credentials: an
 // unconfigured Vision is a disabled Vision, which is a supported mode.
-func NewVision(store *cache.Store, meter Meter, opts Options) *Vision {
+func NewVision(store EvidenceStore, meter Meter, opts Options) *Vision {
 	if meter == nil {
 		meter = NopMeter{}
 	}

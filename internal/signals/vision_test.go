@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/aidandevv/craig-extension/internal/cache"
 	"github.com/aidandevv/craig-extension/internal/domain"
@@ -363,5 +365,72 @@ func TestValidateImageURL(t *testing.T) {
 		if !wantOK && err == nil {
 			t.Errorf("%s: expected rejection, got none", raw)
 		}
+	}
+}
+
+// memoryStore proves Vision needs only the EvidenceStore contract, which is
+// what lets the browser build supply extension storage instead of SQLite.
+type memoryStore struct {
+	mu       sync.Mutex
+	evidence map[string]map[string]any
+	units    map[string]int
+}
+
+func newMemoryStore() *memoryStore {
+	return &memoryStore{evidence: map[string]map[string]any{}, units: map[string]int{}}
+}
+
+func (m *memoryStore) GetEvidence(_ context.Context, hash, feature string) (map[string]any, time.Time, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	data, ok := m.evidence[hash+"/"+feature]
+	return data, time.Now(), ok
+}
+
+func (m *memoryStore) PutEvidence(_ context.Context, hash, feature string, data map[string]any, _ time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.evidence[hash+"/"+feature] = data
+	return nil
+}
+
+func (m *memoryStore) ReserveVisionUnit(_ context.Context, feature string, monthlyCap int) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.units[feature] >= monthlyCap {
+		return false, nil
+	}
+	m.units[feature]++
+	return true, nil
+}
+
+var _ EvidenceStore = (*cache.Store)(nil)
+var _ EvidenceStore = (*memoryStore)(nil)
+
+func TestVisionUsesAnyEvidenceStore(t *testing.T) {
+	var calls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		_, _ = w.Write([]byte(webDetectionBody("https://www.zillow.com/x")))
+	}))
+	t.Cleanup(server.Close)
+	store := newMemoryStore()
+	vision := NewVision(store, NopMeter{}, Options{Endpoint: server.URL, APIKey: "k", MonthlyCap: 10})
+	detector := NewReverseImage(vision, ReverseImageOptions{Groups: realEstateGroups})
+
+	for i := 0; i < 2; i++ {
+		result, err := detector.Evaluate(context.Background(), listingWithImage())
+		if err != nil {
+			t.Fatalf("evaluate %d: %v", i, err)
+		}
+		if !result.Hard {
+			t.Fatalf("evaluate %d: want hard flag from zillow match, got %+v", i, result)
+		}
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Errorf("provider calls = %d, want 1 (second call served from memoryStore)", got)
+	}
+	if store.units[FeatureWebDetection] != 1 {
+		t.Errorf("reserved units = %d, want 1", store.units[FeatureWebDetection])
 	}
 }
