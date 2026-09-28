@@ -52,7 +52,10 @@ func await(promise js.Value) (js.Value, error) {
 		return nil
 	})
 	onRejected := js.FuncOf(func(_ js.Value, args []js.Value) any {
-		done <- settled{err: errors.New(argOrUndefined(args).Call("toString").String())}
+		// String(reason) rather than reason.toString(): it never panics, even
+		// for undefined, null, or a primitive rejection reason.
+		reason := js.Global().Get("String").Invoke(argOrUndefined(args)).String()
+		done <- settled{err: errors.New(reason)}
 		return nil
 	})
 	defer onFulfilled.Release()

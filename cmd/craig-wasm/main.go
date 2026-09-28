@@ -7,13 +7,22 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"syscall/js"
 
 	"github.com/aidandevv/craig-extension/internal/browserapi"
+	"github.com/aidandevv/craig-extension/internal/signals"
 )
 
 func main() {
-	host := browserapi.Host{Store: hostStore{js.Global().Get("craigStore")}}
+	var store signals.EvidenceStore
+	if craigStore := js.Global().Get("craigStore"); craigStore.Type() == js.TypeObject {
+		// Only wire up storage when the host actually provided an object;
+		// otherwise leave Host.Store nil so Vision stays disabled instead of
+		// panicking the first time hostStore calls a method on undefined.
+		store = hostStore{craigStore}
+	}
+	host := browserapi.Host{Store: store}
 	js.Global().Set("craigAnalyze", promiseFunc(func(in string) ([]byte, error) {
 		return host.Analyze(context.Background(), []byte(in))
 	}))
@@ -40,6 +49,14 @@ func promiseFunc(handler func(string) ([]byte, error)) js.Func {
 		executor := js.FuncOf(func(_ js.Value, p []js.Value) any {
 			resolve, reject := p[0], p[1]
 			go func() {
+				// A panic here (e.g. the host violating the craigStore
+				// contract) must become a rejected promise, not a dead
+				// wasm runtime that fails every later call.
+				defer func() {
+					if r := recover(); r != nil {
+						reject.Invoke(js.Global().Get("Error").New(fmt.Sprint(r)))
+					}
+				}()
 				out, err := handler(input)
 				if err != nil {
 					reject.Invoke(js.Global().Get("Error").New(err.Error()))
