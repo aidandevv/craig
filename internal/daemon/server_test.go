@@ -72,19 +72,19 @@ rules:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := server.compiled.Rules["nonstandard_rental_fee"]; !ok {
+	if _, ok := server.eng.Compiled().Rules["nonstandard_rental_fee"]; !ok {
 		t.Fatal("migrated nonstandard-fee rule is not active")
 	}
-	if _, ok := server.compiled.Rules["high_standard_rental_fee"]; !ok {
+	if _, ok := server.eng.Compiled().Rules["high_standard_rental_fee"]; !ok {
 		t.Fatal("migrated high-standard-fee rule is not active")
 	}
-	if _, ok := server.compiled.Rules["market_rent_below_hud"]; !ok {
+	if _, ok := server.eng.Compiled().Rules["market_rent_below_hud"]; !ok {
 		t.Fatal("migrated market-rent rule is not active")
 	}
-	if _, ok := server.compiled.Rules["rent_price_mismatch"]; !ok {
+	if _, ok := server.eng.Compiled().Rules["rent_price_mismatch"]; !ok {
 		t.Fatal("migrated price-mismatch rule is not active")
 	}
-	if _, ok := server.compiled.Rules["prepayment_before_access"]; !ok {
+	if _, ok := server.eng.Compiled().Rules["prepayment_before_access"]; !ok {
 		t.Fatal("migrated prepayment-before-access rule is not active")
 	}
 	raw, err := os.ReadFile(rulesPath)
@@ -307,8 +307,8 @@ func TestPutVisionAPIKeyUpdatesOnlyTheAuthenticatedLocalRuntime(t *testing.T) {
 	if server.vision == nil || !server.vision.Enabled() {
 		t.Error("Vision runtime was not enabled")
 	}
-	if _, unavailable := server.compiled.Unavailable["reverse_image_real_estate"]; unavailable {
-		t.Errorf("image rules remain unavailable after configuring Vision: %+v", server.compiled.Unavailable)
+	if _, unavailable := server.eng.Compiled().Unavailable["reverse_image_real_estate"]; unavailable {
+		t.Errorf("image rules remain unavailable after configuring Vision: %+v", server.eng.Compiled().Unavailable)
 	}
 	configResponse := serve(server, authorized(http.MethodGet, "/api/config", ""))
 	if configResponse.Code != http.StatusOK || strings.Contains(configResponse.Body.String(), "test-key") || !strings.Contains(configResponse.Body.String(), `"google_vision":true`) {

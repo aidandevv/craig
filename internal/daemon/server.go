@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -22,9 +21,8 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/aidandevv/craig-extension/internal/config"
-	"github.com/aidandevv/craig-extension/internal/detect"
 	"github.com/aidandevv/craig-extension/internal/domain"
-	"github.com/aidandevv/craig-extension/internal/marketplace"
+	"github.com/aidandevv/craig-extension/internal/engine"
 	"github.com/aidandevv/craig-extension/internal/risk"
 	"github.com/aidandevv/craig-extension/internal/rules"
 	"github.com/aidandevv/craig-extension/internal/signals"
@@ -69,7 +67,7 @@ type Server struct {
 	mu             sync.RWMutex
 	visionUpdateMu sync.Mutex
 	set            rules.RuleSet
-	compiled       rules.Compiled
+	eng            *engine.Engine
 	rulesModTime   time.Time
 	rulesSize      int64
 }
@@ -91,7 +89,7 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	compiled, err := rules.Compile(set, rules.Deps{Vision: opts.Vision})
+	eng, err := engine.New(set, rules.Deps{Vision: opts.Vision})
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +102,7 @@ func New(opts Options) (*Server, error) {
 		autoReload: opts.AutoReload, cacheLocation: opts.CacheLocation,
 		deps: rules.Deps{Vision: opts.Vision}, vision: opts.Vision,
 		setVisionAPIKey: opts.SetVisionAPIKey,
-		verbose:         opts.Verbose, verboseWriter: opts.VerboseWriter, set: set, compiled: compiled,
+		verbose:         opts.Verbose, verboseWriter: opts.VerboseWriter, set: set, eng: eng,
 		rulesModTime: info.ModTime(), rulesSize: info.Size(),
 	}, nil
 }
@@ -266,20 +264,20 @@ func (s *Server) analyze(w http.ResponseWriter, r *http.Request) {
 		writeAnalysisError(w, http.StatusBadRequest, "invalid listing JSON: "+err.Error(), recorder.Events())
 		return
 	}
-	listing, err := marketplace.Normalize(listing)
+	s.mu.RLock()
+	eng := s.eng
+	s.mu.RUnlock()
+	assessment, err := eng.Analyze(ctx, listing, engine.Options{})
 	if err != nil {
-		trace.Log(ctx, "listing", "listing validation failed")
+		if errors.Is(err, engine.ErrInvalidListing) {
+			// eng.Analyze already logged the "listing validation failed" trace
+			// event, and err already carries the "invalid listing: " prefix.
+			writeAnalysisError(w, http.StatusUnprocessableEntity, err.Error(), recorder.Events())
+			return
+		}
 		writeAnalysisError(w, http.StatusUnprocessableEntity, "invalid listing: "+err.Error(), recorder.Events())
 		return
 	}
-	trace.Log(ctx, "listing", "normalized listing with %d image(s)", len(listing.Images))
-	s.mu.RLock()
-	compiled := s.compiled
-	s.mu.RUnlock()
-	trace.Log(ctx, "rules", "running %d detector(s) for %d enabled rule(s)", len(compiled.Detectors), len(compiled.Rules))
-	started := time.Now()
-	results := detect.Evaluate(ctx, compiled.Detectors, listing)
-	assessment := risk.Assess(results, compiled, time.Since(started))
 	trace.Log(ctx, "assessment", "completed in %dms; %d of %d checks ran", assessment.AnalysisTimeMS, assessment.Coverage.Ran, assessment.Coverage.Enabled)
 	writeJSON(w, http.StatusOK, struct {
 		risk.Assessment
@@ -297,7 +295,7 @@ func (s *Server) writeTraceEvent(event trace.Event) {
 func (s *Server) getConfig(w http.ResponseWriter) {
 	s.mu.RLock()
 	version := s.set.Version
-	enabled := len(s.compiled.Rules)
+	enabled := len(s.eng.Compiled().Rules)
 	vision := s.vision
 	s.mu.RUnlock()
 	response := struct {
@@ -349,9 +347,9 @@ func (s *Server) putVisionAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	deps := rules.Deps{Vision: vision}
-	compiled, err := rules.Compile(s.set, deps)
+	eng, err := engine.New(s.set, deps)
 	if err == nil {
-		s.deps, s.vision, s.compiled = deps, vision, compiled
+		s.deps, s.vision, s.eng = deps, vision, eng
 	}
 	s.mu.Unlock()
 	if err != nil {
@@ -387,35 +385,11 @@ func (s *Server) putRules(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid rules JSON: "+err.Error())
 		return
 	}
-	// Reject an invalid user payload before adding upgrade defaults. Otherwise an
-	// empty rule set could become valid merely because a newer binary has more
-	// migrations than the client knew about.
-	if err := rules.Validate(candidate); err != nil {
-		writeError(w, http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-	if _, err := rules.MigrateApplicationFeeRule(&candidate); err != nil {
-		writeError(w, http.StatusUnprocessableEntity, "migrate rules: "+err.Error())
-		return
-	}
-	if _, err := rules.MigrateMarketRentRule(&candidate); err != nil {
-		writeError(w, http.StatusUnprocessableEntity, "migrate rules: "+err.Error())
-		return
-	}
-	if _, err := rules.MigrateRentPriceMismatchRule(&candidate); err != nil {
-		writeError(w, http.StatusUnprocessableEntity, "migrate rules: "+err.Error())
-		return
-	}
-	if _, err := rules.MigratePrepaymentBeforeAccessRule(&candidate); err != nil {
-		writeError(w, http.StatusUnprocessableEntity, "migrate rules: "+err.Error())
-		return
-	}
-	data, err := yaml.Marshal(candidate)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "encode rules: "+err.Error())
-		return
-	}
-	validated, err := rules.Parse(data)
+	// Reject an invalid user payload before adding upgrade defaults, and apply
+	// the same migrations and strict round-trip the CLI and browser build use.
+	// Otherwise an empty rule set could become valid merely because a newer
+	// binary has more migrations than the client knew about.
+	validated, data, err := engine.PrepareRuleSet(candidate)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
@@ -425,7 +399,7 @@ func (s *Server) putRules(w http.ResponseWriter, r *http.Request) {
 	// not leave an enabled provider paired with a no-key compiled snapshot.
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	compiled, err := rules.Compile(validated, s.deps)
+	eng, err := engine.New(validated, s.deps)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
@@ -439,24 +413,12 @@ func (s *Server) putRules(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "stat written rules: "+err.Error())
 		return
 	}
-	s.set, s.compiled, s.rulesModTime, s.rulesSize = validated, compiled, info.ModTime(), info.Size()
+	s.set, s.eng, s.rulesModTime, s.rulesSize = validated, eng, info.ModTime(), info.Size()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": validated.Version})
 }
 
 func (s *Server) getSchema(w http.ResponseWriter) {
-	presetNames := make([]string, 0, len(rules.Presets()))
-	for name := range rules.Presets() {
-		presetNames = append(presetNames, name)
-	}
-	sort.Strings(presetNames)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"rule_types":    []string{rules.TypePatternMatch, rules.TypeContactCheck, rules.TypeImageAnalysis, rules.TypeApplicationFeeCheck, rules.TypeMarketRentCheck, rules.TypeRentPriceMismatch},
-		"scopes":        []string{rules.ScopeTitle, rules.ScopeDescription, rules.ScopeCaption, rules.ScopeWholePost},
-		"severities":    []string{rules.SeverityRed, rules.SeverityRisk, rules.SeverityGreen},
-		"image_methods": []string{rules.MethodReverseSearch, rules.MethodOCR},
-		"presets":       rules.Presets(),
-		"preset_names":  presetNames,
-	})
+	writeJSON(w, http.StatusOK, rules.Schema())
 }
 
 func (s *Server) maybeReload() error {
@@ -483,7 +445,7 @@ func (s *Server) reload() error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	compiled, err := rules.Compile(set, s.deps)
+	eng, err := engine.New(set, s.deps)
 	if err != nil {
 		return err
 	}
@@ -491,7 +453,7 @@ func (s *Server) reload() error {
 	if err != nil {
 		return err
 	}
-	s.set, s.compiled, s.rulesModTime, s.rulesSize = set, compiled, info.ModTime(), info.Size()
+	s.set, s.eng, s.rulesModTime, s.rulesSize = set, eng, info.ModTime(), info.Size()
 	return nil
 }
 
