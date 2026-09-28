@@ -1,12 +1,19 @@
 import { defaultSettings, type Settings } from "./types";
 
 // Chrome's callback and Promise extension APIs vary by browser/type package.
-// These wrappers keep the token-bearing local storage and non-secret session
-// cache explicit, while also surfacing storage failures to callers.
+// These wrappers keep the local storage area (which holds the user's Vision
+// key) and the non-secret session cache explicit, while also surfacing
+// storage failures to callers.
+const positiveInt = (value: unknown, fallback: number): number =>
+	typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : fallback;
+
 export async function loadSettings(): Promise<Settings> {
 	const defaults: Record<string, unknown> = { ...defaultSettings };
 	const values = await get(chrome.storage.local, defaults);
 	return {
+		visionApiKey: typeof values.visionApiKey === "string" ? values.visionApiKey : defaultSettings.visionApiKey,
+		monthlyCap: positiveInt(values.monthlyCap, defaultSettings.monthlyCap),
+		maxPhotos: positiveInt(values.maxPhotos, defaultSettings.maxPhotos),
 		daemonUrl: typeof values.daemonUrl === "string" ? values.daemonUrl : defaultSettings.daemonUrl,
 		daemonId: typeof values.daemonId === "string" ? values.daemonId : defaultSettings.daemonId,
 		token: typeof values.token === "string" ? values.token : defaultSettings.token,
@@ -14,7 +21,7 @@ export async function loadSettings(): Promise<Settings> {
 	};
 }
 
-export function saveSettings(settings: Settings): Promise<void> {
+export function saveSettings(settings: Partial<Settings>): Promise<void> {
 	return set(chrome.storage.local, { ...settings });
 }
 

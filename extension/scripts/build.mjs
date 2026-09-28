@@ -1,5 +1,5 @@
 import { build } from "esbuild";
-import { cp, mkdir, rm } from "node:fs/promises";
+import { access, cp, mkdir, rm } from "node:fs/promises";
 
 const dist = new URL("../dist/", import.meta.url);
 await rm(dist, { recursive: true, force: true });
@@ -17,3 +17,10 @@ await build({
 });
 
 await cp("options/index.html", "dist/options/index.html");
+
+try {
+  await access("generated/engine.wasm");
+} catch {
+  throw new Error("generated/engine.wasm is missing. Run `make wasm` from the repository root first.");
+}
+await cp("generated/engine.wasm", "dist/engine.wasm");

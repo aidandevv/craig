@@ -72,6 +72,9 @@ export interface TraceEvent {
 }
 
 export interface Settings {
+  visionApiKey: string;
+  monthlyCap: number;
+  maxPhotos: number;
   daemonUrl: string;
   daemonId: string;
   token: string;
@@ -79,6 +82,9 @@ export interface Settings {
 }
 
 export const defaultSettings: Settings = {
+  visionApiKey: "",
+  monthlyCap: 999,
+  maxPhotos: 4,
   daemonUrl: "http://127.0.0.1:8765",
   daemonId: "",
   token: "",
@@ -87,7 +93,11 @@ export const defaultSettings: Settings = {
 
 export type WorkerRequest =
   | { type: "ANALYZE_LISTING"; listing: ListingPayload; force?: boolean }
-  | { type: "OPEN_OPTIONS" };
+  | { type: "OPEN_OPTIONS" }
+  | { type: "RULES_GET" }
+  | { type: "RULES_PUT"; rules: unknown }
+  | { type: "RULES_SCHEMA" }
+  | { type: "USAGE_GET" };
 
 export type WorkerResponse =
   | { ok: true; assessment: Assessment; cached: boolean; trace: TraceEvent[] }

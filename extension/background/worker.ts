@@ -1,5 +1,12 @@
 import { loadSettings } from "../shared/storage";
+import { loadEngine } from "./engine";
+import { chromeStorageArea, createEvidenceStore } from "./evidence-store";
 import type { Assessment, ListingPayload, TraceEvent, WorkerRequest, WorkerResponse } from "../shared/types";
+
+// The engine reads globalThis.craigStore once at startup, so it must be
+// installed before any listener or loadEngine call.
+const store = createEvidenceStore(chromeStorageArea(chrome.storage.local));
+globalThis.craigStore = store;
 
 const inFlight = new Map<string, Promise<WorkerResponse>>();
 
@@ -24,6 +31,35 @@ chrome.runtime.onMessage.addListener((message: WorkerRequest, _sender, sendRespo
 		sendResponse({ ok: true });
 		return;
 	}
+	if (message.type === "RULES_GET") {
+		void (async () => {
+			const stored = await loadStoredRules();
+			if (stored) return stored;
+			await loadEngine();
+			return JSON.parse(await globalThis.craigDefaultRules!());
+		})().then((rules) => sendResponse({ ok: true, rules }), (e) => sendResponse({ ok: false, error: String(e) }));
+		return true;
+	}
+	if (message.type === "RULES_PUT") {
+		void (async () => {
+			await loadEngine();
+			const prepared = JSON.parse(await globalThis.craigPrepareRules!(JSON.stringify(message.rules)));
+			await chromeStorageArea(chrome.storage.local).set({ "craig:rules": prepared });
+			return prepared;
+		})().then((rules) => sendResponse({ ok: true, rules }), (e) => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+		return true;
+	}
+	if (message.type === "RULES_SCHEMA") {
+		void loadEngine().then(() => globalThis.craigRuleSchema!()).then(
+			(schema) => sendResponse({ ok: true, schema: JSON.parse(schema) }), (e) => sendResponse({ ok: false, error: String(e) }));
+		return true;
+	}
+	if (message.type === "USAGE_GET") {
+		void Promise.all([store.unitsUsed("web_detection"), store.unitsUsed("text_detection")]).then(
+			([web, text]) => sendResponse({ ok: true, usage: { web_detection: web, text_detection: text } }),
+			(e) => sendResponse({ ok: false, error: String(e) }));
+		return true;
+	}
 	if (message.type !== "ANALYZE_LISTING") {
 		return;
 	}
@@ -32,7 +68,7 @@ chrome.runtime.onMessage.addListener((message: WorkerRequest, _sender, sendRespo
 });
 
 async function analyze(listing: ListingPayload, force: boolean): Promise<WorkerResponse> {
-    // Always ask the daemon to score current rules. It caches provider evidence.
+    // Always score with current rules; the engine caches provider evidence.
     const cacheKey = JSON.stringify({listing, force});
 
 	const current = inFlight.get(cacheKey);
@@ -46,42 +82,31 @@ async function analyze(listing: ListingPayload, force: boolean): Promise<WorkerR
 }
 
 async function requestAssessment(listing: ListingPayload, force: boolean): Promise<WorkerResponse> {
-	const localTrace = [
-		extensionTrace("extension", `Prepared normalized listing with ${listing.images?.length || 0} image URL(s).`),
-		extensionTrace("extension", "Sending authenticated request to the local daemon.")
-	];
-	const settings = await loadSettings();
-	if (!settings.token.trim()) {
-		const trace = [...localTrace, extensionTrace("extension", "Stopped before request: no daemon token is configured.")];
-		writeTrace(trace);
-		return { ok: false, error: "No connection code is set. Open Craig settings and paste the code from `craig-extension config token`.", trace };
-	}
-	const baseURL = settings.daemonUrl.replace(/\/$/, "");
+	const localTrace = [extensionTrace("extension", `Prepared normalized listing with ${listing.images?.length || 0} image URL(s).`)];
 	try {
-		const response = await fetch(`${baseURL}/api/analyze${force ? "?fresh=true" : ""}`, {
-			method: "POST",
-			headers: {
-				"Authorization": `Bearer ${settings.token}`,
-				"Content-Type": "application/json"
-			},
-			body: JSON.stringify(listing),
-			signal: AbortSignal.timeout(45_000)
-		});
-		const payload = await response.json().catch(() => ({})) as AnalyzePayload;
+		const [settings, rules] = await Promise.all([loadSettings(), loadStoredRules(), loadEngine()]);
+		localTrace.push(extensionTrace("extension", settings.visionApiKey ? "Running Craig with photo checks." : "Running Craig without photo checks (no Vision key)."));
+		const raw = await globalThis.craigAnalyze!(JSON.stringify({
+			listing,
+			rules,
+			fresh: force,
+			vision: { api_key: settings.visionApiKey || undefined, monthly_cap: settings.monthlyCap, max_images: settings.maxPhotos }
+		}));
+		const payload = JSON.parse(raw) as AnalyzePayload;
 		const trace = [...localTrace, ...normalizeTrace(payload.trace)];
-		if (!response.ok) {
-			trace.push(extensionTrace("extension", `Local daemon returned HTTP ${response.status}.`));
-			writeTrace(trace);
-			return { ok: false, error: payload.error || `The local daemon returned HTTP ${response.status}.`, trace };
-		}
-		trace.push(extensionTrace("extension", "Received a completed assessment from the local daemon."));
 		writeTrace(trace);
+		void store.prune().catch(() => undefined);
 		return { ok: true, assessment: payload, cached: false, trace };
-	} catch {
-		const trace = [...localTrace, extensionTrace("extension", `Could not reach the local daemon at ${baseURL}.`)];
+	} catch (error) {
+		const trace = [...localTrace, extensionTrace("extension", "Analysis stopped before completion.")];
 		writeTrace(trace);
-		return { ok: false, error: `Could not reach the Craig helper at ${baseURL}. Start it with \`craig-extension daemon\`, then try again.`, trace };
+		return { ok: false, error: error instanceof Error ? error.message : "Craig could not analyze this listing.", trace };
 	}
+}
+
+async function loadStoredRules(): Promise<unknown | undefined> {
+	const stored = (await chromeStorageArea(chrome.storage.local).get("craig:rules"))["craig:rules"];
+	return stored && typeof stored === "object" ? stored : undefined;
 }
 
 function extensionTrace(step: string, message: string): TraceEvent {
