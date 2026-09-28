@@ -22,6 +22,22 @@ config.yaml
 # not project source.
 .claude/
 
+# Local agent and editor state
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+AGENTS.override.md
+.agents/
+CODEX.md
+.codex/
+.cursor/
+.gemini/
+GEMINI.md
+.aider/
+.aider.conf.yml
+.github/copilot-instructions.md
+.github/instructions/
+
 # Extension build artifacts
 extension/node_modules/
 extension/dist/

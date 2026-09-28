@@ -1,7 +1,8 @@
-.PHONY: test format tidy test-pkg build extension-install extension-test extension-build
+.PHONY: test format tidy test-pkg build extension-install extension-test extension-build dev
 
 HOST_GOOS := $(shell uname -s | tr '[:upper:]' '[:lower:]')
 HOST_GOARCH := $(shell uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+GO_IMAGE ?= golang:1.24-alpine
 
 # Go is not assumed on the host; everything runs in a container.
 test:
@@ -11,19 +12,19 @@ build:
 	mkdir -p bin
 	docker run --rm -v "$(PWD):/src" -w /src \
 		-e CGO_ENABLED=0 -e GOOS=$(HOST_GOOS) -e GOARCH=$(HOST_GOARCH) \
-		golang:1.24-alpine go build -trimpath -ldflags='-s -w' -o bin/craig-extension ./cmd/craig-extension
+		$(GO_IMAGE) go build -trimpath -ldflags='-s -w' -o bin/craig-extension ./cmd/craig-extension
 
 format:
-	docker run --rm -v "$(PWD):/src" -w /src golang:1.24-alpine \
+	docker run --rm -v "$(PWD):/src" -w /src $(GO_IMAGE) \
 		sh -c 'gofmt -w $$(find cmd internal -name "*.go")'
 
 tidy:
-	docker run --rm -v "$(PWD):/src" -w /src golang:1.24-alpine \
+	docker run --rm -v "$(PWD):/src" -w /src $(GO_IMAGE) \
 		sh -c 'apk add --no-cache build-base >/dev/null && go mod tidy'
 
 # Run one package's tests, e.g. make test-pkg PKG=./internal/rules
 test-pkg:
-	docker run --rm -v "$(PWD):/src" -w /src golang:1.24-alpine \
+	docker run --rm -v "$(PWD):/src" -w /src $(GO_IMAGE) \
 		sh -c 'apk add --no-cache build-base >/dev/null 2>&1 && go test $(PKG) -v'
 
 extension-install:
@@ -34,3 +35,7 @@ extension-test:
 
 extension-build:
 	cd extension && npm run build
+
+# Build the browser extension and local helper, then run the helper with safe traces.
+dev: extension-build build
+	./bin/craig-extension daemon --verbose
