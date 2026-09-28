@@ -96,21 +96,23 @@ NOT EVALUATED (5)
 ## Run the daemon
 
 Initialize once to create a private config file, editable starter rules, and a
-random extension token:
+random connection code:
 
 ```sh
 ./bin/craig-extension config init
-export GOOGLE_VISION_API_KEY='your-restricted-google-vision-key' # optional
 ./bin/craig-extension daemon --verbose # optional: mirror safe execution traces to this terminal
 ```
 
-The daemon binds only to `127.0.0.1:8765`. Its API requires the token printed
-by `config token` (except `/healthz`), rejects ordinary web-page origins and
-unexpected `Host` headers, and accepts `chrome-extension://` origins for the
-planned extension. Edit the generated `rules.yaml`; changes are picked up on
-the next analysis request, or call `POST /api/reload-rules` explicitly.
+The helper binds only to `127.0.0.1:8765`. Its API requires the connection code
+printed by `config init` (or `config token`) except for `/healthz`, which exposes
+only a non-secret helper ID used for local discovery. It rejects ordinary
+web-page origins and unexpected `Host` headers, while accepting
+`chrome-extension://` origins for Craig. Edit the generated `rules.yaml`;
+changes are picked up on the next analysis request, or call
+`POST /api/reload-rules` explicitly.
 
-With Vision configured, the daemon processes every valid public listing image.
+With Vision configured, the daemon processes every valid Craigslist listing image
+from `images.craigslist.org`.
 Each uncached image uses one `WEB_DETECTION` request (shared by the reverse
 image and stock-photo rules) and one `TEXT_DETECTION` OCR request (for the MLS
 watermark rule). Successful provider evidence is cached for 24 hours and re-scored
@@ -172,11 +174,16 @@ make extension-install
 make extension-build
 ```
 
-Open the extension's **Options**, paste the value from `craig-extension config
-token`, and keep auto-run off until you want every listing checked on page load.
-Otherwise, click the extension toolbar icon on a Craigslist listing to analyze
-it manually. The badge always shows coverage; it explicitly says when the local
-daemon is unreachable or an image check did not run.
+Open the extension's **Options** and choose **Find Craig helper**. Craig detects
+the local helper and shows its helper ID automatically, so there is no normal
+URL setup step. Paste the one-time connection code printed during setup, then
+optionally paste a restricted Google Cloud Vision API key under **Photo checks**.
+That key is sent directly to the authenticated local helper, saved only in its
+private configuration, and is never stored by the browser extension. Keep
+auto-run off until you want every listing checked on page load. Otherwise, click
+the extension toolbar icon on a Craigslist listing to analyze it manually. The
+badge always shows coverage; it explicitly says when the local helper is
+unreachable or an image check did not run.
 
 Every result also has a collapsed **Verified execution log**. It shows the
 actual extension, daemon, detector, cache, and Vision stages for that request,
@@ -199,6 +206,7 @@ make format   # gofmt
 make tidy     # go mod tidy
 make extension-test  # fixture and badge tests
 make extension-build # typecheck and build the unpacked MV3 artifact
+make dev             # build the extension and helper, then run the helper verbosely
 ```
 
 ## Documents
