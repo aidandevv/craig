@@ -41,6 +41,7 @@ GEMINI.md
 # Extension build artifacts
 extension/node_modules/
 extension/dist/
+extension/generated/
 
 # Local working notes and journals are intentionally not published.
 /docs/

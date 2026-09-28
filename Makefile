@@ -1,4 +1,4 @@
-.PHONY: test format tidy test-pkg build extension-install extension-test extension-build dev
+.PHONY: test format tidy test-pkg build wasm extension-install extension-test extension-build dev
 
 HOST_GOOS := $(shell uname -s | tr '[:upper:]' '[:lower:]')
 HOST_GOARCH := $(shell uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
@@ -26,6 +26,13 @@ tidy:
 test-pkg:
 	docker run --rm -v "$(PWD):/src" -w /src $(GO_IMAGE) \
 		sh -c 'apk add --no-cache build-base >/dev/null 2>&1 && go test $(PKG) -v'
+
+# Build the browser engine. wasm_exec.js must come from the same Go toolchain.
+wasm:
+	mkdir -p extension/generated
+	docker run --rm -v "$(PWD):/src" -w /src -e GOOS=js -e GOARCH=wasm $(GO_IMAGE) \
+		sh -c 'go build -trimpath -ldflags="-s -w" -o extension/generated/engine.wasm ./cmd/craig-wasm && cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" extension/generated/wasm_exec.js'
+	@ls -lh extension/generated/engine.wasm
 
 extension-install:
 	cd extension && npm ci
