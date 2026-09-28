@@ -14,14 +14,11 @@ export async function loadSettings(): Promise<Settings> {
 		visionApiKey: typeof values.visionApiKey === "string" ? values.visionApiKey : defaultSettings.visionApiKey,
 		monthlyCap: positiveInt(values.monthlyCap, defaultSettings.monthlyCap),
 		maxPhotos: positiveInt(values.maxPhotos, defaultSettings.maxPhotos),
-		daemonUrl: typeof values.daemonUrl === "string" ? values.daemonUrl : defaultSettings.daemonUrl,
-		daemonId: typeof values.daemonId === "string" ? values.daemonId : defaultSettings.daemonId,
-		token: typeof values.token === "string" ? values.token : defaultSettings.token,
 		autoRun: typeof values.autoRun === "boolean" ? values.autoRun : defaultSettings.autoRun
 	};
 }
 
-export function saveSettings(settings: Partial<Settings>): Promise<void> {
+export function saveSettings(settings: Settings): Promise<void> {
 	return set(chrome.storage.local, { ...settings });
 }
 

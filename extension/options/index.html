@@ -22,49 +22,41 @@
         <img src="../../assets/craig-icon-48.png" width="40" height="40" alt="">
         <h1>Craig</h1>
       </div>
-      <p>Check Craigslist listings against rules running privately on your computer.</p>
-
-      <section aria-labelledby="connection-heading">
-        <h2 id="connection-heading">Connect Craig</h2>
-        <p>Start the Craig helper, then Craig will look for it on this computer.</p>
-        <div class="actions">
-          <button id="detect-daemon" type="button">Find Craig helper</button>
-        </div>
-        <div id="daemon-identity" class="helper" hidden>
-          <p><strong id="daemon-identity-title">Craig helper found</strong></p>
-          <p>Helper ID: <code id="daemon-id"></code></p>
-        </div>
-        <p id="settings-status" class="status" role="status" aria-live="polite"></p>
-      </section>
-
-      <form id="settings">
-        <label>Connection code <input id="token" name="token" type="password" autocomplete="off" required aria-describedby="connection-code-help"></label>
-        <p id="connection-code-help" class="hint">This is the code shown when you first set up Craig. It stays in this browser profile and is never sent to a listing page.</p>
-        <label class="check"><input id="auto-run" name="auto-run" type="checkbox"> Analyze automatically when a listing opens</label>
-        <button type="submit">Connect Craig</button>
-        <details class="advanced">
-          <summary>Connection details</summary>
-          <p class="hint">Craig normally finds the helper automatically. Change this only if you run it on a different local address.</p>
-          <label>Craig helper address <input id="daemon-url" name="daemon-url" type="url" required></label>
-          <button id="test-connection" class="secondary" type="button">Check this address</button>
-        </details>
-      </form>
+      <p>Check Craigslist listings against rules running privately in your browser.</p>
 
       <section class="vision" aria-labelledby="vision-heading">
-        <h2 id="vision-heading">Photo checks <span class="hint">(optional)</span></h2>
-        <p>Use your Google Cloud Vision key to check listing photos for reused images and watermarks.</p>
+        <h2 id="vision-heading">Photo checks</h2>
+        <p>Craig can check listing photos for reused images and watermarks using your own Google Cloud Vision key. Set one up in five steps:</p>
+        <ol>
+          <li><a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener noreferrer">Create or choose a Google Cloud project</a></li>
+          <li><a href="https://console.cloud.google.com/billing" target="_blank" rel="noopener noreferrer">Turn on billing</a> for that project</li>
+          <li><a href="https://console.cloud.google.com/apis/library/vision.googleapis.com" target="_blank" rel="noopener noreferrer">Enable the Cloud Vision API</a></li>
+          <li><a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">Create an API key</a></li>
+          <li><a href="https://console.cloud.google.com/billing/budgets" target="_blank" rel="noopener noreferrer">Restrict the key to the Cloud Vision API and set a budget alert</a></li>
+        </ol>
         <form id="vision-settings">
+          <p id="vision-key-state" class="hint"></p>
           <label>Google Cloud Vision API key <input id="vision-api-key" name="vision-api-key" type="password" autocomplete="off" aria-describedby="vision-key-help"></label>
-          <p id="vision-key-help" class="hint">The key is sent directly to your local Craig helper and saved in its private configuration. The extension never stores it.</p>
-          <button id="save-vision-key" type="submit">Enable photo checks</button>
+          <p id="vision-key-help" class="hint">Your key is stored only in this browser profile and is sent only to Google. Listing text never leaves your computer.</p>
+          <div class="rule-grid">
+            <label>Photos to check per listing (1-24) <input id="max-photos" name="max-photos" type="number" min="1" max="24" step="1"></label>
+            <label>Monthly limit per check type <input id="monthly-cap" name="monthly-cap" type="number" min="1" step="1"></label>
+          </div>
+          <label class="check"><input id="auto-run" name="auto-run" type="checkbox"> Analyze automatically when a listing opens</label>
+          <div class="actions">
+            <button id="test-vision-key" class="secondary" type="button">Test key</button>
+            <button id="save-vision-key" type="submit">Save</button>
+            <button id="remove-vision-key" class="danger" type="button" hidden>Remove key</button>
+          </div>
         </form>
         <p id="vision-status" class="status" role="status" aria-live="polite"></p>
+        <p id="vision-usage" class="hint" role="status" aria-live="polite"></p>
       </section>
 
       <section class="rules" aria-labelledby="rules-heading">
         <h2 id="rules-heading">Rule builder</h2>
         <p>Build clear preset-based text checks without editing YAML. Contact, image, custom-pattern, and regex rules stay read-only and are preserved when you save.</p>
-        <button id="load-rules" type="button">Load rules from daemon</button>
+        <button id="load-rules" type="button">Edit rules</button>
         <p id="rules-status" class="status" role="status" aria-live="polite"></p>
 
         <div id="rule-editor" hidden>

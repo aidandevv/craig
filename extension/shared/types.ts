@@ -62,8 +62,8 @@ export interface Assessment {
 	analysis_time_ms: number;
 }
 
-// Trace events are emitted by the extension and local daemon while processing
-// a single analysis. They never contain the bearer token, Vision API key,
+// Trace events are emitted by the extension and its in-browser engine while processing
+// a single analysis. They never contain the Vision API key,
 // listing text, or image URLs.
 export interface TraceEvent {
 	timestamp: string;
@@ -75,9 +75,6 @@ export interface Settings {
   visionApiKey: string;
   monthlyCap: number;
   maxPhotos: number;
-  daemonUrl: string;
-  daemonId: string;
-  token: string;
   autoRun: boolean;
 }
 
@@ -85,9 +82,6 @@ export const defaultSettings: Settings = {
   visionApiKey: "",
   monthlyCap: 999,
   maxPhotos: 4,
-  daemonUrl: "http://127.0.0.1:8765",
-  daemonId: "",
-  token: "",
   autoRun: false
 };
 

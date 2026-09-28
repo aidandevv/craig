@@ -7,7 +7,7 @@ test("worker forwards fresh intent, omits an empty key, and reports engine error
   let listener: Listener | undefined;
   const stored: Record<string, unknown> = {
     visionApiKey: "", monthlyCap: 999, maxPhotos: 4,
-    daemonUrl: "http://127.0.0.1:8765", daemonId: "", token: "", autoRun: false
+    autoRun: false
   };
   const requests: Record<string, unknown>[] = [];
   let failNext = false;
