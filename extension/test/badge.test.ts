@@ -131,11 +131,11 @@ test("badge renders a collapsed trace with only safe event text", () => {
 test("badge calls the options callback when configuration is needed", () => {
 	const dom = new JSDOM("<!doctype html><html><body></body></html>");
 	let opened = 0;
-	renderError(dom.window.document, "Could not reach the local daemon at http://127.0.0.1:8765.", () => { opened++; });
+	renderError(dom.window.document, "Could not reach the Craig helper at http://127.0.0.1:8765.", () => { opened++; });
 	const shadow = dom.window.document.querySelector("#craig-extension-badge")?.shadowRoot!;
 	(shadow.querySelector("button") as HTMLButtonElement).click();
 	assert.equal(opened, 1);
-	assert.match(shadow.textContent || "", /Local daemon unavailable/);
+	assert.match(shadow.textContent || "", /Craig helper not running/);
 });
 
 test("badge ignores legacy visual candidates and shows incomplete photo coverage", () => {

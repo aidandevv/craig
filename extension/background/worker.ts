@@ -54,7 +54,7 @@ async function requestAssessment(listing: ListingPayload, force: boolean): Promi
 	if (!settings.token.trim()) {
 		const trace = [...localTrace, extensionTrace("extension", "Stopped before request: no daemon token is configured.")];
 		writeTrace(trace);
-		return { ok: false, error: "No daemon token is configured. Open extension options and paste the value from `craig-extension config token`.", trace };
+		return { ok: false, error: "No connection code is set. Open Craig settings and paste the code from `craig-extension config token`.", trace };
 	}
 	const baseURL = settings.daemonUrl.replace(/\/$/, "");
 	try {
@@ -80,7 +80,7 @@ async function requestAssessment(listing: ListingPayload, force: boolean): Promi
 	} catch {
 		const trace = [...localTrace, extensionTrace("extension", `Could not reach the local daemon at ${baseURL}.`)];
 		writeTrace(trace);
-		return { ok: false, error: `Could not reach the local daemon at ${baseURL}. Start it with \`craig-extension daemon\`, then try again.`, trace };
+		return { ok: false, error: `Could not reach the Craig helper at ${baseURL}. Start it with \`craig-extension daemon\`, then try again.`, trace };
 	}
 }
 
@@ -100,6 +100,6 @@ function normalizeTrace(value: unknown): TraceEvent[] {
 
 function writeTrace(trace: TraceEvent[]): void {
 	for (const event of trace) {
-		console.debug(`[Craig Extension] ${event.step}: ${event.message}`);
+		console.debug(`[Craig] ${event.step}: ${event.message}`);
 	}
 }

@@ -1,6 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Craig Extension",
+  "name": "Craig",
+  "short_name": "Craig",
   "version": "0.1.0",
   "description": "Local-first, explainable scam indicators for Craigslist listings.",
   "permissions": [

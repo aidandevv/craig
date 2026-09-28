@@ -29,6 +29,7 @@ export function extractListing(document: Document): ListingPayload {
 	));
   const postedAt = timestampOf(document);
 	const attributes = attrGroupText(document);
+	const address = textOf(document, ".street-address") || textOf(document, ".mapaddress");
 
   return compact({
     marketplace: "craigslist",
@@ -37,8 +38,8 @@ export function extractListing(document: Document): ListingPayload {
     price: priceOf(document),
     currency: "USD",
 		rent_period: rentPeriodOf(attributes),
-		bedrooms: bedroomsOf(textOf(document, ".attrgroup .shared-line-bubble") || title),
-		zip_code: zipCodeOf(`${title}\n${description}`),
+		bedrooms: bedroomsOf(attributes, title),
+		zip_code: zipCodeOf(`${title}\n${address}\n${description}`),
     description,
     images,
     captions,
@@ -71,15 +72,18 @@ function cleanedText(node: Element): string {
 		.trim();
 }
 
-// Craigslist housing listings render structured fields — application fee
-// details, broker fee details, listed by, rent period, and similar — as
-// key/value spans inside .attrgroup, separate from #postingbody. Without
-// this, that text never reaches any rule and fee-related scam signals in it
-// go undetected rather than merely unmatched.
+// Craigslist housing listings render structured fields — bedroom/bath count,
+// application fee details, broker fee details, listed by, rent period, and
+// amenities — as several separate .attrgroup containers. Each one wraps its
+// key/value pairs in nested <div class="attr ..."><span class="labl">/
+// <span class="valu"> markup rather than plain <span> children, so only
+// reading each .attrgroup's full text (not just its direct span children)
+// reaches fee-related scam signals and the rent period; a shallower selector
+// silently drops that text instead of merely leaving it unmatched.
 function attrGroupText(document: Document): string {
 	const lines: string[] = [];
-	document.querySelectorAll(".attrgroup > span").forEach((span) => {
-		const text = span.textContent?.trim();
+	document.querySelectorAll(".attrgroup").forEach((group) => {
+		const text = group.textContent?.replace(/\s+/g, " ").trim();
 		if (text) lines.push(text);
 	});
 	return lines.join("\n");
@@ -95,10 +99,23 @@ function rentPeriodOf(attributes: string): string | undefined {
 	return attributes.match(/\brent\s+period\s*:\s*([a-z]+)/i)?.[1]?.toLowerCase();
 }
 
-function bedroomsOf(text: string): number | undefined {
-	const bedrooms = text.match(/\b([0-4])\s*(?:br|bed(?:room)?s?)\b/i)?.[1];
-	if (bedrooms !== undefined) return Number.parseInt(bedrooms, 10);
-	return /\bstudio\b/i.test(text) ? 0 : undefined;
+// Matches the bedroom count however a listing happens to phrase it: "2BR",
+// "1 bd", "1bd", "1bdrm", "1bed", "1 bedroom", "2-Bedroom", "3 bedrooms", etc.
+// A hyphen or run of whitespace (or nothing at all) may separate the digit
+// from the unit.
+const bedroomPattern = /\b([0-4])[\s-]*(?:br|bd(?:rm)?s?|bed(?:room)?s?)\b/i;
+
+// bedroomsOf checks each text source in order — the structured .attrgroup
+// bubble (e.g. "2BR / 2Ba") first, since it is Craigslist's own categorized
+// bedroom field, falling back to the free-form title only when that source
+// has nothing to offer.
+function bedroomsOf(...sources: string[]): number | undefined {
+	for (const text of sources) {
+		const bedrooms = text.match(bedroomPattern)?.[1];
+		if (bedrooms !== undefined) return Number.parseInt(bedrooms, 10);
+		if (/\bstudio\b/i.test(text)) return 0;
+	}
+	return undefined;
 }
 
 function zipCodeOf(text: string): string | undefined {

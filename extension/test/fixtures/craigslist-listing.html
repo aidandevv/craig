@@ -2,18 +2,41 @@
 <html>
   <head><title>Sunny 2BR near the park - craigslist</title></head>
   <body>
-    <section id="postingtitle"><span id="titletextonly">Sunny 2BR near the park</span><span class="price">$2,400</span></section>
+    <section id="postingtitle">
+      <span id="titletextonly">Sunny 2BR near the park</span>
+      <span class="price">$2,400</span>
+    </section>
     <time class="date timeago" datetime="2026-09-09T12:00:00-0700"></time>
     <a id="replylink" href="#reply">reply</a>
-    <p class="attrgroup">
-      <span class="shared-line-bubble">2BR / 1Ba</span>
-      <span>application fee details: <b>Refundable://$400 admin holding fee and +/$29.95 application fee.</b></span>
-      <span>rent period: <b>monthly</b></span>
-    </p>
+    <h2 class="street-address">2100 Park Blvd, Oakland, CA 94103</h2>
+    <div class="mapaddress">2100 Park Blvd</div>
+
+    <!-- Real Craigslist listings spread these across several .attrgroup
+         containers, and wrap key/value pairs like fee details and rent
+         period in nested <div class="attr ..."> markup rather than plain
+         sibling <span> elements. -->
+    <div class="attrgroup">
+      <span class="attr important">
+        2BR / 1Ba
+      </span>
+    </div>
+    <div class="attrgroup">
+      <div class="attr application_fee_explained">
+        <span class="labl">application fee details:</span>
+        <span class="valu">Refundable://$400 admin holding fee and +/$29.95 application fee.</span>
+      </div>
+      <div class="attr rent_period">
+        <span class="labl">rent period:</span>
+        <span class="valu">
+          <a href="#">monthly</a>
+        </span>
+      </div>
+    </div>
+
     <section id="postingbody">
       QR Code Link to This Post
       <div class="print-qrcode">qrcode</div>
-      Available now in 94103. Text 510-555-1234 to schedule a viewing.
+      Available now. Text 510-555-1234 to schedule a viewing.
     </section>
     <div id="thumbs">
       <a href="https://images.craigslist.org/00A0A_example_full.jpg" title="Bright kitchen"><img src="https://images.craigslist.org/00A0A_example_thumb.jpg" alt="Bright kitchen"></a>

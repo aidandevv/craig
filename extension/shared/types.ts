@@ -73,12 +73,14 @@ export interface TraceEvent {
 
 export interface Settings {
   daemonUrl: string;
+  daemonId: string;
   token: string;
   autoRun: boolean;
 }
 
 export const defaultSettings: Settings = {
   daemonUrl: "http://127.0.0.1:8765",
+  daemonId: "",
   token: "",
   autoRun: false
 };

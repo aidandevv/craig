@@ -21,10 +21,10 @@ async function analyze(force: boolean): Promise<void> {
 		renderLoading(document);
 		const result = await chrome.runtime.sendMessage({ type: "ANALYZE_LISTING", listing, force }) as WorkerResponse;
 		if (result.ok) {
-			renderAssessment(document, result.assessment, result.cached, openOptions, result.trace);
+			renderAssessment(document, result.assessment, result.cached, openOptions, result.trace, () => void analyze(true));
 			return;
 		}
-		renderError(document, result.error, openOptions, result.trace);
+		renderError(document, result.error, openOptions, result.trace, () => void analyze(true));
 	} catch (error) {
 		const message = error instanceof Error ? error.message : "Unable to extract this listing.";
 		renderError(document, message, openOptions, [{ timestamp: new Date().toISOString(), step: "extension", message }]);

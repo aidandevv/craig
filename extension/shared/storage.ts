@@ -8,6 +8,7 @@ export async function loadSettings(): Promise<Settings> {
 	const values = await get(chrome.storage.local, defaults);
 	return {
 		daemonUrl: typeof values.daemonUrl === "string" ? values.daemonUrl : defaultSettings.daemonUrl,
+		daemonId: typeof values.daemonId === "string" ? values.daemonId : defaultSettings.daemonId,
 		token: typeof values.token === "string" ? values.token : defaultSettings.token,
 		autoRun: typeof values.autoRun === "boolean" ? values.autoRun : defaultSettings.autoRun
 	};

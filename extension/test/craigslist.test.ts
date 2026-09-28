@@ -56,6 +56,58 @@ test("extractListing recognizes a studio bedroom count", () => {
 	assert.equal(extractListing(dom.window.document).bedrooms, 0);
 });
 
+test("extractListing recognizes bedroom count phrasing variations", () => {
+	const cases: Array<[string, number]> = [
+		["1bd", 1],
+		["1 bd", 1],
+		["1bdrm", 1],
+		["1bed", 1],
+		["1 bedroom", 1],
+		["2-Bedroom", 2],
+		["2BR", 2],
+		["3 bedrooms", 3],
+		["4 BR", 4],
+	];
+	for (const [phrase, expected] of cases) {
+		const dom = new JSDOM(`<title>Charming ${phrase} apartment - craigslist</title>`, {
+			url: "https://sfbay.craigslist.org/apa/d/example/2.html",
+		});
+		assert.equal(extractListing(dom.window.document).bedrooms, expected, phrase);
+	}
+});
+
+test("extractListing sources bedrooms, rent period and fee details from Craigslist's real nested .attrgroup markup even when the title has no bedroom count", () => {
+	const dom = new JSDOM(`
+		<title>Charming apartment downtown - craigslist</title>
+		<div class="attrgroup"><span class="attr important">2BR / 2Ba</span></div>
+		<div class="attrgroup">
+			<div class="attr application_fee_explained">
+				<span class="labl">application fee details:</span>
+				<span class="valu">Refundable:'//$100 admin holding fee and +/'$29.95 application fee..</span>
+			</div>
+			<div class="attr rent_period">
+				<span class="labl">rent period:</span>
+				<span class="valu"><a href="#">monthly</a></span>
+			</div>
+		</div>
+		<section id="postingbody">Beautiful apartment near downtown.</section>
+	`, { url: "https://sfbay.craigslist.org/apa/d/example/1.html" });
+	const listing = extractListing(dom.window.document);
+
+	assert.equal(listing.bedrooms, 2);
+	assert.equal(listing.rent_period, "monthly");
+	assert.match(listing.description || "", /holding fee/i);
+});
+
+test("extractListing sources the ZIP code from the street address when it is absent from the title and body", () => {
+	const dom = new JSDOM(`
+		<title>Lovely unit - craigslist</title>
+		<h2 class="street-address">32 Collins St #101, San Francisco, CA 94118</h2>
+		<section id="postingbody">Great place, no calls please.</section>
+	`, { url: "https://sfbay.craigslist.org/apa/d/example/3.html" });
+	assert.equal(extractListing(dom.window.document).zip_code, "94118");
+});
+
 test("extractListing upgrades Craigslist thumbnails and supports a single gallery photo", () => {
   for (const html of ['<div id="thumbs"><img src="https://images.craigslist.org/room_50x50.jpg"></div>', '<div class="gallery"><img src="https://images.craigslist.org/room_600x450.jpg"></div>']) {
     const dom=new JSDOM(`<title>Studio</title>${html}`,{url:"https://sfbay.craigslist.org/apa/1.html"});
