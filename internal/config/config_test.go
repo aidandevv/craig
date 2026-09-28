@@ -33,6 +33,9 @@ func TestInitializeCreatesPrivateConfigAndStarterRules(t *testing.T) {
 	if loaded.Daemon.Token != cfg.Daemon.Token || loaded.Rules.File != paths.Rules {
 		t.Errorf("loaded config = %+v, want token and rules path retained", loaded)
 	}
+	if loaded.Daemon.ID != cfg.Daemon.ID || len(loaded.Daemon.ID) != 32 {
+		t.Errorf("loaded daemon ID = %q, want generated 16-byte hex identifier", loaded.Daemon.ID)
+	}
 	if _, err := os.Stat(filepath.Join(home, ".local", "share", "craig-extension")); !os.IsNotExist(err) {
 		t.Errorf("initialization should not create cache yet: %v", err)
 	}
@@ -87,5 +90,76 @@ func TestNewTokenIs32BytesOfHex(t *testing.T) {
 	}
 	if len(token) != 64 {
 		t.Errorf("token length = %d, want 64 hex characters", len(token))
+	}
+}
+
+func TestEnsureDaemonIDMigratesOlderConfigWithoutExpandingVisionEnvironmentReference(t *testing.T) {
+	home := t.TempDir()
+	paths := DefaultPaths(home)
+	cfg, err := Default(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Daemon.ID = ""
+	if err := Initialize(paths.Config, cfg); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GOOGLE_VISION_API_KEY", "should-stay-out-of-config")
+	id, err := EnsureDaemonID(paths.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(id) != 32 {
+		t.Errorf("daemon ID length = %d, want 32", len(id))
+	}
+	again, err := EnsureDaemonID(paths.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again != id {
+		t.Errorf("daemon ID changed from %q to %q", id, again)
+	}
+	raw, err := os.ReadFile(paths.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "should-stay-out-of-config") || !strings.Contains(string(raw), "${GOOGLE_VISION_API_KEY}") {
+		t.Errorf("migration rewrote Vision environment reference: %s", raw)
+	}
+}
+
+func TestSetGoogleVisionAPIKeyKeepsConfigPrivateAndReturnsSafeVisionSettings(t *testing.T) {
+	home := t.TempDir()
+	paths := DefaultPaths(home)
+	cfg, err := Default(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Initialize(paths.Config, cfg); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := SetGoogleVisionAPIKey(paths.Config, "  direct-vision-key  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.MonthlyUnitCap != cfg.Vision.MonthlyUnitCap || settings.UseADC != cfg.Vision.UseADC {
+		t.Errorf("returned Vision settings = %+v, want existing non-secret settings", settings)
+	}
+	info, err := os.Stat(paths.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Errorf("config mode = %o, want 600", got)
+	}
+	loaded, err := Load(paths.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.APIKeys.GoogleVision != "direct-vision-key" {
+		t.Errorf("saved Vision key = %q, want trimmed direct value", loaded.APIKeys.GoogleVision)
+	}
+	if _, err := SetGoogleVisionAPIKey(paths.Config, " "); err == nil {
+		t.Error("empty Vision key was accepted")
 	}
 }

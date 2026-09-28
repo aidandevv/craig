@@ -20,6 +20,17 @@ import (
 	"github.com/aidandevv/craig-extension/internal/signals"
 )
 
+const (
+	daemonReadHeaderTimeout = 5 * time.Second
+	daemonReadTimeout       = 15 * time.Second
+	// The extension cancels an image analysis after 45 seconds. Leave the
+	// daemon enough time to return its structured result without permitting an
+	// unbounded local connection.
+	daemonWriteTimeout  = 60 * time.Second
+	daemonIdleTimeout   = 60 * time.Second
+	daemonMaxHeaderSize = 8 << 10
+)
+
 func runDaemon(args []string, stdout io.Writer) int {
 	fs := flag.NewFlagSet("daemon", flag.ContinueOnError)
 	fs.SetOutput(stdout)
@@ -41,6 +52,14 @@ func runDaemon(args []string, stdout io.Writer) int {
 		fmt.Fprintf(stdout, "error: %v\n", err)
 		return exitRuntime
 	}
+	if cfg.Daemon.ID == "" {
+		id, err := config.EnsureDaemonID(*path)
+		if err != nil {
+			fmt.Fprintf(stdout, "error: create daemon ID: %v\n", err)
+			return exitRuntime
+		}
+		cfg.Daemon.ID = id
+	}
 	store, err := cache.Open(cfg.Cache.Location)
 	if err != nil {
 		fmt.Fprintf(stdout, "error: open cache: %v\n", err)
@@ -56,8 +75,17 @@ func runDaemon(args []string, stdout io.Writer) int {
 		MonthlyCap: cfg.Vision.MonthlyUnitCap,
 	})
 	handler, err := daemon.New(daemon.Options{
-		Port: cfg.Daemon.Port, Token: cfg.Daemon.Token, RulesPath: cfg.Rules.File,
+		Port: cfg.Daemon.Port, Token: cfg.Daemon.Token, DaemonID: cfg.Daemon.ID, RulesPath: cfg.Rules.File,
 		AutoReload: cfg.Rules.AutoReload, CacheLocation: cfg.Cache.Location, Vision: vision,
+		SetVisionAPIKey: func(apiKey string) (*signals.Vision, error) {
+			settings, err := config.SetGoogleVisionAPIKey(*path, apiKey)
+			if err != nil {
+				return nil, err
+			}
+			return signals.NewVision(store, signals.NopMeter{}, signals.Options{
+				APIKey: apiKey, UseADC: settings.UseADC, MonthlyCap: settings.MonthlyUnitCap,
+			}), nil
+		},
 		Verbose: *verbose, VerboseWriter: stdout,
 	})
 	if err != nil {
@@ -69,7 +97,7 @@ func runDaemon(args []string, stdout io.Writer) int {
 		fmt.Fprintf(stdout, "error: bind 127.0.0.1:%d: %v\n", cfg.Daemon.Port, err)
 		return exitRuntime
 	}
-	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
+	server := newDaemonHTTPServer(handler)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go func() {
@@ -78,7 +106,7 @@ func runDaemon(args []string, stdout io.Writer) int {
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)
 	}()
-	fmt.Fprintf(stdout, "craig-extension daemon listening on http://127.0.0.1:%d\n", cfg.Daemon.Port)
+	fmt.Fprintf(stdout, "Craig helper is ready at http://127.0.0.1:%d (ID %s)\n", cfg.Daemon.Port, cfg.Daemon.ID)
 	if *verbose {
 		fmt.Fprintln(stdout, "verbose execution traces enabled; credentials, listing text, and image URLs are not logged")
 	}
@@ -87,4 +115,15 @@ func runDaemon(args []string, stdout io.Writer) int {
 		return exitRuntime
 	}
 	return exitOK
+}
+
+func newDaemonHTTPServer(handler http.Handler) *http.Server {
+	return &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: daemonReadHeaderTimeout,
+		ReadTimeout:       daemonReadTimeout,
+		WriteTimeout:      daemonWriteTimeout,
+		IdleTimeout:       daemonIdleTimeout,
+		MaxHeaderBytes:    daemonMaxHeaderSize,
+	}
 }

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -35,8 +36,11 @@ func newTestServer(t *testing.T, autoReload bool) (*Server, string) {
 	t.Cleanup(func() { _ = store.Close() })
 	vision := signals.NewVision(store, signals.NopMeter{}, signals.Options{MonthlyCap: 10})
 	server, err := New(Options{
-		Port: 8765, Token: testToken, RulesPath: rulesPath, AutoReload: autoReload,
+		Port: 8765, Token: testToken, DaemonID: "0123456789abcdef0123456789abcdef", RulesPath: rulesPath, AutoReload: autoReload,
 		CacheLocation: "cache.db", Vision: vision,
+		SetVisionAPIKey: func(apiKey string) (*signals.Vision, error) {
+			return signals.NewVision(store, signals.NopMeter{}, signals.Options{APIKey: apiKey, MonthlyCap: 10}), nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("new daemon: %v", err)
@@ -176,8 +180,12 @@ func TestRequestGuardRejectsUnauthenticatedBrowserAndRebindingRequests(t *testin
 
 func TestHealthAndExtensionPreflightAreAvailableWithoutBearerToken(t *testing.T) {
 	server, _ := newTestServer(t, false)
-	if got := serve(server, request(http.MethodGet, "/healthz", "")); got.Code != http.StatusOK {
-		t.Fatalf("health status = %d, want 200", got.Code)
+	health := serve(server, request(http.MethodGet, "/healthz", ""))
+	if got := health.Code; got != http.StatusOK {
+		t.Fatalf("health status = %d, want 200", got)
+	}
+	if !strings.Contains(health.Body.String(), `"daemon_id":"0123456789abcdef0123456789abcdef"`) {
+		t.Errorf("health response does not identify helper: %s", health.Body.String())
 	}
 	preflight := request(http.MethodOptions, "/api/analyze", "")
 	preflight.Header.Set("Origin", "chrome-extension://abcdefghijklmnop")
@@ -275,6 +283,43 @@ func TestConfigResponseDoesNotExposeBearerOrVisionKey(t *testing.T) {
 	}
 }
 
+func TestPutVisionAPIKeyUpdatesOnlyTheAuthenticatedLocalRuntime(t *testing.T) {
+	server, _ := newTestServer(t, false)
+	unauthorized := serve(server, request(http.MethodPut, "/api/vision", `{"api_key":"test-key"}`))
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated Vision update status = %d, want 401", unauthorized.Code)
+	}
+	var received string
+	server.setVisionAPIKey = func(apiKey string) (*signals.Vision, error) {
+		received = apiKey
+		return signals.NewVision(nil, signals.NopMeter{}, signals.Options{APIKey: apiKey, MonthlyCap: 10}), nil
+	}
+	response := serve(server, authorized(http.MethodPut, "/api/vision", `{"api_key":"  test-key  "}`))
+	if response.Code != http.StatusOK {
+		t.Fatalf("Vision update status = %d: %s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "test-key") || !strings.Contains(response.Body.String(), `"google_vision":true`) {
+		t.Errorf("Vision update response = %s, want safe enabled acknowledgement", response.Body.String())
+	}
+	if received != "test-key" {
+		t.Errorf("Vision setter received %q, want trimmed key", received)
+	}
+	if server.vision == nil || !server.vision.Enabled() {
+		t.Error("Vision runtime was not enabled")
+	}
+	if _, unavailable := server.compiled.Unavailable["reverse_image_real_estate"]; unavailable {
+		t.Errorf("image rules remain unavailable after configuring Vision: %+v", server.compiled.Unavailable)
+	}
+	configResponse := serve(server, authorized(http.MethodGet, "/api/config", ""))
+	if configResponse.Code != http.StatusOK || strings.Contains(configResponse.Body.String(), "test-key") || !strings.Contains(configResponse.Body.String(), `"google_vision":true`) {
+		t.Errorf("safe config after Vision update = %d %s", configResponse.Code, configResponse.Body.String())
+	}
+	empty := serve(server, authorized(http.MethodPut, "/api/vision", `{"api_key":" "}`))
+	if empty.Code != http.StatusUnprocessableEntity {
+		t.Errorf("empty Vision key status = %d, want 422", empty.Code)
+	}
+}
+
 func TestPutRulesAndExplicitReloadChangeActiveRuleSet(t *testing.T) {
 	server, rulesPath := newTestServer(t, false)
 	set := oneMarkerRuleSet("FIRST_MARKER")
@@ -338,6 +383,10 @@ func TestRulesSchemaAndInvalidUpdateAreReported(t *testing.T) {
 	response := serve(server, authorized(http.MethodPut, "/api/rules", invalid))
 	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "at least one rule") {
 		t.Errorf("invalid update = %d %s", response.Code, response.Body.String())
+	}
+	after := serve(server, authorized(http.MethodGet, "/api/rules", ""))
+	if after.Code != http.StatusOK || !strings.Contains(after.Body.String(), "payment_no_recourse") {
+		t.Errorf("invalid update changed active rules = %d %s", after.Code, after.Body.String())
 	}
 }
 
@@ -409,8 +458,11 @@ func strconvQuote(value string) string {
 }
 
 func TestFreshAnalysisReachesProvider(t *testing.T) {
-	calls := 0
-	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; w.Write([]byte(`{"responses":[{}]}`)) }))
+	var calls atomic.Int32
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		_, _ = w.Write([]byte(`{"responses":[{}]}`))
+	}))
 	defer provider.Close()
 	store, err := cache.Open(":memory:")
 	if err != nil {
@@ -426,7 +478,7 @@ func TestFreshAnalysisReachesProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := `{"marketplace":"craigslist","listing_url":"https://sfbay.craigslist.org/apa/1.html","title":"Studio","images":["https://images.example/photo.jpg"]}`
+	body := `{"marketplace":"craigslist","listing_url":"https://sfbay.craigslist.org/apa/1.html","title":"Studio","images":["https://images.craigslist.org/photo.jpg"]}`
 	for index, path := range []string{"/api/analyze", "/api/analyze", "/api/analyze?fresh=true"} {
 		response := serve(server, authorized(http.MethodPost, path, body))
 		if response.Code != 200 {
@@ -436,8 +488,8 @@ func TestFreshAnalysisReachesProvider(t *testing.T) {
 		if index == 2 {
 			want = 4
 		}
-		if calls != want {
-			t.Fatalf("request %d calls=%d want=%d", index, calls, want)
+		if got := int(calls.Load()); got != want {
+			t.Fatalf("request %d calls=%d want=%d", index, got, want)
 		}
 	}
 }

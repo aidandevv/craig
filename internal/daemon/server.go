@@ -33,38 +33,45 @@ import (
 
 const maxRequestBody = 1 << 20 // Listing payloads should be small, never image bytes.
 
+const maxVisionKeyRequestBody = 4 << 10
+
 // Options contains the runtime collaborators that must be created outside the
 // HTTP layer. In particular, the cache and Vision client have one shared
 // lifetime across all requests.
 type Options struct {
-	Port          int
-	Token         string
-	RulesPath     string
-	AutoReload    bool
-	CacheLocation string
-	Vision        *signals.Vision
-	Verbose       bool
-	VerboseWriter io.Writer
+	Port            int
+	Token           string
+	DaemonID        string
+	RulesPath       string
+	AutoReload      bool
+	CacheLocation   string
+	Vision          *signals.Vision
+	SetVisionAPIKey func(string) (*signals.Vision, error)
+	Verbose         bool
+	VerboseWriter   io.Writer
 }
 
 // Server is an http.Handler with a swappable compiled ruleset. A failed reload
 // never replaces a last-known-good set.
 type Server struct {
-	port          int
-	token         string
-	rulesPath     string
-	autoReload    bool
-	cacheLocation string
-	deps          rules.Deps
-	vision        *signals.Vision
-	verbose       bool
-	verboseWriter io.Writer
+	port            int
+	token           string
+	daemonID        string
+	rulesPath       string
+	autoReload      bool
+	cacheLocation   string
+	deps            rules.Deps
+	vision          *signals.Vision
+	setVisionAPIKey func(string) (*signals.Vision, error)
+	verbose         bool
+	verboseWriter   io.Writer
 
-	mu           sync.RWMutex
-	set          rules.RuleSet
-	compiled     rules.Compiled
-	rulesModTime time.Time
-	rulesSize    int64
+	mu             sync.RWMutex
+	visionUpdateMu sync.Mutex
+	set            rules.RuleSet
+	compiled       rules.Compiled
+	rulesModTime   time.Time
+	rulesSize      int64
 }
 
 // New loads and compiles the first ruleset. A daemon that cannot validate its
@@ -93,10 +100,11 @@ func New(opts Options) (*Server, error) {
 		return nil, fmt.Errorf("stat rules file: %w", err)
 	}
 	return &Server{
-		port: opts.Port, token: opts.Token, rulesPath: opts.RulesPath,
+		port: opts.Port, token: opts.Token, daemonID: opts.DaemonID, rulesPath: opts.RulesPath,
 		autoReload: opts.AutoReload, cacheLocation: opts.CacheLocation,
 		deps: rules.Deps{Vision: opts.Vision}, vision: opts.Vision,
-		verbose: opts.Verbose, verboseWriter: opts.VerboseWriter, set: set, compiled: compiled,
+		setVisionAPIKey: opts.SetVisionAPIKey,
+		verbose:         opts.Verbose, verboseWriter: opts.VerboseWriter, set: set, compiled: compiled,
 		rulesModTime: info.ModTime(), rulesSize: info.Size(),
 	}, nil
 }
@@ -128,7 +136,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			methodNotAllowed(w, http.MethodGet)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "daemon_id": s.daemonID})
 	case "/api/analyze":
 		if !s.requireAuth(w, r) {
 			return
@@ -147,6 +155,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.getConfig(w)
+	case "/api/vision":
+		if !s.requireAuth(w, r) {
+			return
+		}
+		if r.Method != http.MethodPut {
+			methodNotAllowed(w, http.MethodPut)
+			return
+		}
+		s.putVisionAPIKey(w, r)
 	case "/api/rules":
 		if !s.requireAuth(w, r) {
 			return
@@ -183,7 +200,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func isAPIPath(path string) bool {
-	return path == "/api/analyze" || path == "/api/config" || path == "/api/rules" ||
+	return path == "/api/analyze" || path == "/api/config" || path == "/api/vision" || path == "/api/rules" ||
 		path == "/api/rules/schema" || path == "/api/reload-rules"
 }
 
@@ -281,8 +298,10 @@ func (s *Server) getConfig(w http.ResponseWriter) {
 	s.mu.RLock()
 	version := s.set.Version
 	enabled := len(s.compiled.Rules)
+	vision := s.vision
 	s.mu.RUnlock()
 	response := struct {
+		DaemonID     string `json:"daemon_id"`
 		RulesVersion string `json:"rules_version"`
 		Providers    struct {
 			GoogleVision bool `json:"google_vision"`
@@ -290,10 +309,56 @@ func (s *Server) getConfig(w http.ResponseWriter) {
 		CacheLocation    string `json:"cache_location"`
 		EnabledRuleCount int    `json:"enabled_rule_count"`
 	}{
-		RulesVersion: version, CacheLocation: s.cacheLocation, EnabledRuleCount: enabled,
+		DaemonID: s.daemonID, RulesVersion: version, CacheLocation: s.cacheLocation, EnabledRuleCount: enabled,
 	}
-	response.Providers.GoogleVision = s.vision != nil && s.vision.Enabled()
+	response.Providers.GoogleVision = vision != nil && vision.Enabled()
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) putVisionAPIKey(w http.ResponseWriter, r *http.Request) {
+	if s.setVisionAPIKey == nil {
+		writeError(w, http.StatusNotImplemented, "this daemon cannot update Vision settings")
+		return
+	}
+	var request struct {
+		APIKey string `json:"api_key"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxVisionKeyRequestBody))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid Vision settings JSON: "+err.Error())
+		return
+	}
+	if err := requireEOF(decoder); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid Vision settings JSON: "+err.Error())
+		return
+	}
+	if strings.TrimSpace(request.APIKey) == "" {
+		writeError(w, http.StatusUnprocessableEntity, "Google Vision API key is required")
+		return
+	}
+
+	// Serialize config writes and the accompanying in-memory swap. This avoids
+	// a later request persisting one key while an earlier request wins in memory.
+	s.visionUpdateMu.Lock()
+	defer s.visionUpdateMu.Unlock()
+	vision, err := s.setVisionAPIKey(strings.TrimSpace(request.APIKey))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "save Vision settings: "+err.Error())
+		return
+	}
+	s.mu.Lock()
+	deps := rules.Deps{Vision: vision}
+	compiled, err := rules.Compile(s.set, deps)
+	if err == nil {
+		s.deps, s.vision, s.compiled = deps, vision, compiled
+	}
+	s.mu.Unlock()
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "activate Vision settings: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "google_vision": vision != nil && vision.Enabled()})
 }
 
 func (s *Server) rulesEndpoint(w http.ResponseWriter, r *http.Request) {
@@ -355,6 +420,11 @@ func (s *Server) putRules(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	// Keep the compiled rules paired with the exact Vision dependency that was
+	// active when this on-disk update was accepted. A concurrent key update must
+	// not leave an enabled provider paired with a no-key compiled snapshot.
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	compiled, err := rules.Compile(validated, s.deps)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
@@ -369,9 +439,7 @@ func (s *Server) putRules(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "stat written rules: "+err.Error())
 		return
 	}
-	s.mu.Lock()
 	s.set, s.compiled, s.rulesModTime, s.rulesSize = validated, compiled, info.ModTime(), info.Size()
-	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": validated.Version})
 }
 
@@ -413,6 +481,8 @@ func (s *Server) reload() error {
 	if err != nil {
 		return err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	compiled, err := rules.Compile(set, s.deps)
 	if err != nil {
 		return err
@@ -421,9 +491,7 @@ func (s *Server) reload() error {
 	if err != nil {
 		return err
 	}
-	s.mu.Lock()
 	s.set, s.compiled, s.rulesModTime, s.rulesSize = set, compiled, info.ModTime(), info.Size()
-	s.mu.Unlock()
 	return nil
 }
 

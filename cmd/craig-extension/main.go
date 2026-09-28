@@ -11,7 +11,7 @@ const usage = `craig-extension — scam indicators for marketplace listings
 Usage:
   craig-extension analyze [flags]   analyze one listing offline
   craig-extension config init       create local daemon configuration
-  craig-extension config token      print the extension bearer token
+  craig-extension config token      print the extension connection code
   craig-extension daemon [flags]    serve the local analysis API
 
 Run "craig-extension <command> -h" for flags.

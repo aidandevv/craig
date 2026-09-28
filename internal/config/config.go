@@ -38,6 +38,7 @@ type Config struct {
 type Daemon struct {
 	Port     int    `yaml:"port"`
 	Token    string `yaml:"token"`
+	ID       string `yaml:"id"`
 	LogLevel string `yaml:"log_level"`
 }
 
@@ -98,8 +99,12 @@ func Default(home string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	id, err := NewDaemonID()
+	if err != nil {
+		return Config{}, err
+	}
 	return Config{
-		Daemon:  Daemon{Port: defaultPort, Token: token, LogLevel: "info"},
+		Daemon:  Daemon{Port: defaultPort, Token: token, ID: id, LogLevel: "info"},
 		APIKeys: APIKeys{GoogleVision: "${GOOGLE_VISION_API_KEY}"},
 		Vision:  Vision{MonthlyUnitCap: defaultMonthlyCap},
 		Cache:   Cache{Location: paths.Cache, MaxAgeDays: defaultMaxAgeDays},
@@ -112,6 +117,17 @@ func NewToken() (string, error) {
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {
 		return "", fmt.Errorf("generate bearer token: %w", err)
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+// NewDaemonID returns an opaque, non-secret identifier for one local Craig
+// installation. The extension uses it only to confirm which helper it found;
+// bearer-token authentication remains the authorization boundary.
+func NewDaemonID() (string, error) {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", fmt.Errorf("generate daemon ID: %w", err)
 	}
 	return hex.EncodeToString(bytes), nil
 }
@@ -153,6 +169,20 @@ func Initialize(path string, cfg Config) error {
 // indirection such as ${GOOGLE_VISION_API_KEY} is expanded only here, after the
 // on-disk configuration has been parsed.
 func Load(path string) (Config, error) {
+	cfg, err := loadRaw(path)
+	if err != nil {
+		return Config{}, err
+	}
+	if err := cfg.expand(); err != nil {
+		return Config{}, err
+	}
+	if err := cfg.Validate(); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
+}
+
+func loadRaw(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("read config: %w", err)
@@ -163,13 +193,62 @@ func Load(path string) (Config, error) {
 	if err := decoder.Decode(&cfg); err != nil {
 		return Config{}, fmt.Errorf("parse config: %w", err)
 	}
-	if err := cfg.expand(); err != nil {
-		return Config{}, err
-	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+// EnsureDaemonID adds a stable helper identifier to configurations created by
+// older Craig versions. It intentionally reads the raw file so rewriting the
+// config never expands an environment-backed Vision key into the file.
+func EnsureDaemonID(path string) (string, error) {
+	cfg, err := loadRaw(path)
+	if err != nil {
+		return "", err
+	}
+	if cfg.Daemon.ID != "" {
+		return cfg.Daemon.ID, nil
+	}
+	id, err := NewDaemonID()
+	if err != nil {
+		return "", err
+	}
+	cfg.Daemon.ID = id
+	if err := write(path, cfg); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// SetGoogleVisionAPIKey saves a direct Vision key in the private config file.
+// Only the local, authenticated daemon calls this when a user submits the
+// options-page form. It returns Vision settings but never returns the key.
+func SetGoogleVisionAPIKey(path, apiKey string) (Vision, error) {
+	key := strings.TrimSpace(apiKey)
+	if key == "" {
+		return Vision{}, errors.New("Google Vision API key is required")
+	}
+	cfg, err := loadRaw(path)
+	if err != nil {
+		return Vision{}, err
+	}
+	cfg.APIKeys.GoogleVision = key
+	if err := write(path, cfg); err != nil {
+		return Vision{}, err
+	}
+	return cfg.Vision, nil
+}
+
+func write(path string, cfg Config) error {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	if err := WriteFileSecure(path, data); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+	return nil
 }
 
 func (c *Config) expand() error {
@@ -232,6 +311,12 @@ func (c Config) Validate() error {
 	token, err := hex.DecodeString(c.Daemon.Token)
 	if err != nil || len(token) != 32 {
 		return errors.New("daemon.token must be a 32-byte hexadecimal token")
+	}
+	if c.Daemon.ID != "" {
+		id, err := hex.DecodeString(c.Daemon.ID)
+		if err != nil || len(id) != 16 {
+			return errors.New("daemon.id must be a 16-byte hexadecimal identifier")
+		}
 	}
 	switch c.Daemon.LogLevel {
 	case "debug", "info", "warn", "error":

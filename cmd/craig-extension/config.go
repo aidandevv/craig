@@ -16,8 +16,12 @@ const configUsage = `Usage:
   craig-extension config token [--config PATH]
 
 config init creates a private configuration file, starter rules.yaml, and a
-random bearer token. Google Vision is optional: leave --vision-api-key unset to
+random connection code. Google Vision is optional: leave --vision-api-key unset to
 use the ${GOOGLE_VISION_API_KEY} reference in the generated configuration.
+
+After setup, start the Craig helper with craig-extension daemon. The
+extension finds a helper on the default local address automatically; the token
+is a one-time connection code for the extension options page.
 `
 
 func runConfig(args []string, stdout io.Writer) int {
@@ -78,8 +82,8 @@ func runConfigInit(args []string, stdout io.Writer) int {
 		return exitRuntime
 	}
 	fmt.Fprintf(stdout, "Created private config: %s\nCreated starter rules: %s\n", *path, cfg.Rules.File)
-	fmt.Fprintln(stdout, "Google Vision is optional. The default config reads ${GOOGLE_VISION_API_KEY}; export it before starting the daemon, or pass --vision-api-key during initialization.")
-	fmt.Fprintln(stdout, "Paste the token below into the extension options when Phase 3 is installed:")
+	fmt.Fprintln(stdout, "Google Vision is optional. You can add its API key from the Craig extension options after the helper starts.")
+	fmt.Fprintln(stdout, "When the extension asks for a connection code, paste this token:")
 	fmt.Fprintln(stdout, cfg.Daemon.Token)
 	return exitOK
 }
