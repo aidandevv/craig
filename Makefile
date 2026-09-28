@@ -2,7 +2,7 @@
 
 HOST_GOOS := $(shell uname -s | tr '[:upper:]' '[:lower:]')
 HOST_GOARCH := $(shell uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
-GO_IMAGE ?= golang:1.24-alpine
+GO_IMAGE ?= golang:1.25-alpine
 
 # Go is not assumed on the host; everything runs in a container.
 test:

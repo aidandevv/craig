@@ -43,3 +43,26 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+
+  wasm:
+    name: WebAssembly core builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Build shared engine for js/wasm
+        env:
+          GOOS: js
+          GOARCH: wasm
+        run: go build ./internal/engine/...
+      - name: Engine must not pull in SQLite
+        env:
+          GOOS: js
+          GOARCH: wasm
+        run: |
+          if go list -deps ./internal/engine | grep -E 'modernc.org/sqlite|internal/cache|internal/daemon|internal/config'; then
+            echo "engine depends on a daemon-only package" >&2; exit 1
+          fi
