@@ -47,7 +47,7 @@ var realEstateGroups = []MatchGroup{
 }
 
 func listingWithImage() domain.Listing {
-	return domain.Listing{Images: []string{"https://images.example.com/a.jpg"}}
+	return domain.Listing{Images: []string{"https://images.craigslist.org/a.jpg"}}
 }
 
 func TestReverseImageFlagsRealEstateMatchAsHard(t *testing.T) {
@@ -69,7 +69,7 @@ func TestReverseImageFlagsRealEstateMatchAsHard(t *testing.T) {
 	if len(got.Flags) != 1 || got.Flags[0] != "reverse_image_real_estate" {
 		t.Errorf("got flags %v, want the owning rule name", got.Flags)
 	}
-	if len(got.ImageMatches) != 1 || got.ImageMatches[0].ListingImageURL != "https://images.example.com/a.jpg" || got.ImageMatches[0].SourcePageURL != "https://www.zillow.com/homedetails/123" {
+	if len(got.ImageMatches) != 1 || got.ImageMatches[0].ListingImageURL != "https://images.craigslist.org/a.jpg" || got.ImageMatches[0].SourcePageURL != "https://www.zillow.com/homedetails/123" {
 		t.Errorf("image evidence = %+v", got.ImageMatches)
 	}
 }
@@ -166,7 +166,7 @@ func TestReverseImageInspectsEveryListingImageAndOnlyScoresEachRuleOnce(t *testi
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
-		if request.Requests[0].Image.Source.ImageURI == "https://images.example.com/b.jpg" {
+		if request.Requests[0].Image.Source.ImageURI == "https://images.craigslist.org/b.jpg" {
 			_, _ = w.Write([]byte(webDetectionBody("https://www.zillow.com/homedetails/123")))
 			return
 		}
@@ -174,7 +174,7 @@ func TestReverseImageInspectsEveryListingImageAndOnlyScoresEachRuleOnce(t *testi
 	}, 100)
 
 	got, err := NewReverseImage(vision, ReverseImageOptions{Groups: realEstateGroups}).Evaluate(context.Background(), domain.Listing{
-		Images: []string{"https://images.example.com/a.jpg", "https://images.example.com/b.jpg"},
+		Images: []string{"https://images.craigslist.org/a.jpg", "https://images.craigslist.org/b.jpg"},
 	})
 	if err != nil {
 		t.Fatalf("evaluate: %v", err)
@@ -188,7 +188,7 @@ func TestReverseImageInspectsEveryListingImageAndOnlyScoresEachRuleOnce(t *testi
 	if len(got.Details) != 1 || got.Details[0] != `reverse_image_real_estate: image 2 — matched "zillow"` {
 		t.Errorf("details = %v", got.Details)
 	}
-	if len(got.ImageMatches) != 1 || got.ImageMatches[0].ListingImageURL != "https://images.example.com/b.jpg" {
+	if len(got.ImageMatches) != 1 || got.ImageMatches[0].ListingImageURL != "https://images.craigslist.org/b.jpg" {
 		t.Errorf("image evidence = %+v", got.ImageMatches)
 	}
 }
@@ -202,7 +202,7 @@ func TestReverseImageReportsBudgetExhaustion(t *testing.T) {
 	}
 
 	got, err := NewReverseImage(vision, ReverseImageOptions{Groups: realEstateGroups}).
-		Evaluate(context.Background(), domain.Listing{Images: []string{"https://images.example.com/other.jpg"}})
+		Evaluate(context.Background(), domain.Listing{Images: []string{"https://images.craigslist.org/other.jpg"}})
 	if err != nil {
 		t.Fatalf("evaluate: %v", err)
 	}
@@ -316,7 +316,7 @@ func TestOCRInspectsEveryListingImage(t *testing.T) {
 			t.Fatalf("decode request: %v", err)
 		}
 		text := "no watermark"
-		if request.Requests[0].Image.Source.ImageURI == "https://images.example.com/b.jpg" {
+		if request.Requests[0].Image.Source.ImageURI == "https://images.craigslist.org/b.jpg" {
 			text = "Multiple Listing Service"
 		}
 		body, _ := json.Marshal(map[string]any{"responses": []any{
@@ -328,7 +328,7 @@ func TestOCRInspectsEveryListingImage(t *testing.T) {
 	got, err := NewOCR(vision, OCROptions{Groups: []MatchGroup{
 		{Rule: "mls_watermark", Tokens: []string{"multiple listing service"}, Weight: 0.30, Hard: true},
 	}}).Evaluate(context.Background(), domain.Listing{Images: []string{
-		"https://images.example.com/a.jpg", "https://images.example.com/b.jpg",
+		"https://images.craigslist.org/a.jpg", "https://images.craigslist.org/b.jpg",
 	}})
 	if err != nil {
 		t.Fatalf("evaluate: %v", err)
@@ -343,14 +343,17 @@ func TestOCRInspectsEveryListingImage(t *testing.T) {
 
 func TestValidateImageURL(t *testing.T) {
 	cases := map[string]bool{
-		"https://images.example.com/a.jpg": true,
-		"http://images.example.com/a.jpg":  true,
-		"file:///etc/passwd":               false,
-		"http://localhost/a.jpg":           false,
-		"http://127.0.0.1/a.jpg":           false,
-		"http://192.168.1.10/a.jpg":        false,
-		"http://169.254.169.254/latest":    false,
-		"https://":                         false,
+		"https://images.craigslist.org/a.jpg":      true,
+		"http://images.craigslist.org/a.jpg":       true,
+		"file:///etc/passwd":                       false,
+		"https://images.example.com/a.jpg":         false,
+		"https://images.craigslist.org:8443/a.jpg": false,
+		"https://user@images.craigslist.org/a.jpg": false,
+		"http://localhost/a.jpg":                   false,
+		"http://127.0.0.1/a.jpg":                   false,
+		"http://192.168.1.10/a.jpg":                false,
+		"http://169.254.169.254/latest":            false,
+		"https://":                                 false,
 	}
 	for raw, wantOK := range cases {
 		err := validateImageURL(raw)

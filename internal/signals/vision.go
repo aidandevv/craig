@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -32,6 +31,8 @@ const (
 )
 
 const defaultEndpoint = "https://vision.googleapis.com/v1/images:annotate"
+
+const craigslistImageHost = "images.craigslist.org"
 
 // Meter records provider usage. A daemon can wire this to real counters; tests
 // and the bare-bones path use NopMeter.
@@ -416,9 +417,10 @@ func responseTime(data map[string]any) time.Time {
 	return at
 }
 
-// validateImageURL rejects anything that is not a public http(s) resource.
-// Image URLs arrive from whatever page the user is viewing, so they are
-// untrusted input even though Google, not this process, performs the fetch.
+// validateImageURL accepts only the documented Craigslist image host. Image
+// URLs arrive from the page and are passed to Google for fetching, so checking
+// a resolved IP locally cannot defend against a later DNS rebinding at the
+// provider. A strict host allowlist does.
 func validateImageURL(raw string) error {
 	parsed, err := url.Parse(raw)
 	if err != nil {
@@ -428,16 +430,8 @@ func validateImageURL(raw string) error {
 		return fmt.Errorf("unsupported image URL scheme %q", parsed.Scheme)
 	}
 	host := parsed.Hostname()
-	if host == "" {
-		return fmt.Errorf("image URL has no host")
-	}
-	if ip := net.ParseIP(host); ip != nil {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
-			return fmt.Errorf("image URL points at a non-public address")
-		}
-	}
-	if strings.EqualFold(host, "localhost") {
-		return fmt.Errorf("image URL points at a non-public address")
+	if parsed.User != nil || !strings.EqualFold(host, craigslistImageHost) || parsed.Port() != "" {
+		return fmt.Errorf("image URL host is not supported")
 	}
 	return nil
 }
