@@ -10,6 +10,17 @@ anywhere except the image-analysis calls you configure with your own API key.
 > Status: MVP complete. The offline engine, secure local daemon, Vision BYOK
 > wiring, Craigslist Chrome extension, and visual rule builder are ready.
 
+## Install from the Chrome Web Store
+
+The consumer build runs the same engine inside the extension, compiled to
+WebAssembly, so there is no daemon to install. It is built from the
+`release/web-extension` branch and published from `web-v*` tags. Photo checks
+are optional and use your own Google Cloud Vision key, entered on the options
+page. See [PRIVACY.md](PRIVACY.md) for exactly what leaves your browser.
+
+The rest of this README documents the daemon build on `main`, which remains
+the reference implementation.
+
 ## Why it exists
 
 This is the counterpart to [Apartment Hunter](https://github.com/aidandevv/craig),

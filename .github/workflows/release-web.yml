@@ -1,0 +1,45 @@
+name: Web release
+
+on:
+  push:
+    tags: ["web-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - name: Build engine.wasm
+        env:
+          GOOS: js
+          GOARCH: wasm
+        run: |
+          mkdir -p extension/generated
+          go build -trimpath -ldflags="-s -w" -o extension/generated/engine.wasm ./cmd/craig-wasm
+          cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" extension/generated/wasm_exec.js
+      - name: Test and build extension
+        working-directory: extension
+        run: npm ci && npm test && npm run build
+      - name: Check manifest version matches tag
+        run: |
+          tag="${GITHUB_REF_NAME#web-v}"
+          manifest="$(node -p "require('./extension/manifest.json').version")"
+          test "$tag" = "$manifest" || { echo "tag $tag != manifest $manifest" >&2; exit 1; }
+      - name: Package
+        working-directory: extension
+        run: zip -r "../craig-web-${GITHUB_REF_NAME#web-v}.zip" manifest.json assets dist
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" craig-web-*.zip --draft --title "Craig for Chrome ${GITHUB_REF_NAME#web-v}" --notes "Chrome Web Store package."
