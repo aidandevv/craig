@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"runtime"
 	"strings"
 	"time"
 
@@ -99,7 +100,7 @@ func NewVision(store EvidenceStore, meter Meter, opts Options) *Vision {
 		endpoint: endpoint,
 		apiKey:   opts.APIKey,
 		cap:      opts.MonthlyCap,
-		client:   &http.Client{Timeout: timeout},
+		client:   &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 	}
 	switch {
 	case opts.APIKey != "":
@@ -192,6 +193,10 @@ func (v *Vision) evaluateImages(
 	outcomes := make([]imageOutcome, 0, total)
 	for index, imageURL := range listing.Images {
 		position := index + 1
+		if ctx.Err() != nil {
+			outcomes = append(outcomes, imageOutcome{index: position, result: domain.SignalResult{Name: name, Skipped: domain.SkipProviderError}})
+			continue
+		}
 		if err := validateImageURL(imageURL); err != nil {
 			trace.Log(ctx, "vision", "%s image %d/%d skipped: %s", name, position, total, err)
 			outcomes = append(outcomes, imageOutcome{index: position, result: domain.SignalResult{Name: name, Skipped: domain.SkipMissingField}})
@@ -293,6 +298,9 @@ func (v *Vision) annotate(ctx context.Context, imageURL, feature string) (map[st
 			return data, nil
 		}
 	}
+	if cachedOnly, _ := ctx.Value(cachedOnlyKey{}).(bool); cachedOnly {
+		return nil, cacheMissError{}
+	}
 	budgetFeature := FeatureWebDetection
 	if feature == "TEXT_DETECTION" {
 		budgetFeature = FeatureTextDetection
@@ -319,16 +327,17 @@ func (v *Vision) annotate(ctx context.Context, imageURL, feature string) (map[st
 	if err != nil {
 		return nil, err
 	}
-	if v.apiKey != "" {
-		q := endpoint.Query()
-		q.Set("key", v.apiKey)
-		endpoint.RawQuery = q.Encode()
-	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if runtime.GOOS == "js" {
+		req.Header.Set("js.fetch:redirect", "error")
+	}
+	if v.apiKey != "" {
+		req.Header.Set("X-Goog-Api-Key", v.apiKey)
+	}
 
 	resp, err := v.client.Do(req)
 	if err != nil {
@@ -402,6 +411,16 @@ func featureField(feature string) string {
 }
 
 type freshKey struct{}
+type cachedOnlyKey struct{}
+
+// WithCachedImages prevents provider calls when a content script lacks refresh authority.
+func WithCachedImages(ctx context.Context) context.Context {
+	return context.WithValue(ctx, cachedOnlyKey{}, true)
+}
+
+type cacheMissError struct{}
+
+func (cacheMissError) Error() string { return "photo refresh required" }
 
 func WithFreshImages(ctx context.Context) context.Context {
 	return context.WithValue(ctx, freshKey{}, true)
@@ -411,6 +430,9 @@ type budgetError struct{}
 
 func (budgetError) Error() string { return "vision budget exhausted" }
 func skipReason(err error) string {
+	if _, ok := err.(cacheMissError); ok {
+		return domain.SkipPhotoRefreshRequired
+	}
 	if _, ok := err.(budgetError); ok {
 		return domain.SkipBudgetExhausted
 	}
@@ -434,7 +456,7 @@ func validateImageURL(raw string) error {
 	if err != nil {
 		return fmt.Errorf("unparseable image URL")
 	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+	if parsed.Scheme != "https" {
 		return fmt.Errorf("unsupported image URL scheme %q", parsed.Scheme)
 	}
 	host := parsed.Hostname()

@@ -67,7 +67,7 @@ func patternSources(r Rule) (patterns []string, literal bool, err error) {
 
 func (p *patternMatch) Name() string { return p.name }
 
-func (p *patternMatch) Evaluate(_ context.Context, listing domain.Listing) (domain.SignalResult, error) {
+func (p *patternMatch) Evaluate(ctx context.Context, listing domain.Listing) (domain.SignalResult, error) {
 	haystack, present := scopeText(listing, p.scope)
 	if !present {
 		return domain.SignalResult{
@@ -80,6 +80,9 @@ func (p *patternMatch) Evaluate(_ context.Context, listing domain.Listing) (doma
 	var hits []string
 	var evidence []domain.TextMatchEvidence
 	for i, re := range p.compiled {
+		if err := ctx.Err(); err != nil {
+			return domain.SignalResult{}, err
+		}
 		if location := re.FindStringIndex(haystack); location != nil {
 			hits = append(hits, p.sources[i])
 			evidence = append(evidence, textMatchEvidence(p.name, haystack, location))

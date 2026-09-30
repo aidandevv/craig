@@ -45,6 +45,7 @@ const (
 	SkipMarketRentBenchmarkUnavailable = "market_rent_benchmark_unavailable"
 	SkipRentPriceInputsMissing         = "rent_price_inputs_missing"
 	SkipProviderError                  = "provider_error"
+	SkipPhotoRefreshRequired           = "photo_refresh_required"
 	SkipPartialImages                  = "partial_images"
 )
 

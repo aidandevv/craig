@@ -3,6 +3,8 @@ package browserapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"github.com/aidandevv/craig-extension/internal/rules"
 	"strings"
 	"testing"
 	"time"
@@ -100,3 +102,31 @@ func TestDecodeEvidence(t *testing.T) {
 }
 
 func mustQuote(s string) string { b, _ := json.Marshal(s); return string(b) }
+
+func TestRequestResourceLimits(t *testing.T) {
+	if _, err := PrepareRules([]byte(strings.Repeat(" ", MaxRequestBytes+1))); err == nil {
+		t.Fatal("oversized request accepted")
+	}
+	for _, max := range []int{0, -1, 25} {
+		raw := strings.Replace(scamRequest, `"max_images": 4`, `"max_images": `+fmt.Sprint(max), 1)
+		if _, err := (Host{}).Analyze(context.Background(), []byte(raw)); err == nil {
+			t.Errorf("max_images %d accepted", max)
+		}
+	}
+	defaults, err := DefaultRules()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var set rules.RuleSet
+	if err := json.Unmarshal(defaults, &set); err != nil {
+		t.Fatal(err)
+	}
+	base := set.Rules["urgency_pressure"]
+	for i := 0; i < 257; i++ {
+		set.Rules[fmt.Sprintf("large_%d", i)] = base
+	}
+	encoded, _ := json.Marshal(set)
+	if _, err := PrepareRules(encoded); err == nil {
+		t.Fatal("oversized rule set accepted")
+	}
+}

@@ -19,6 +19,21 @@ const maxTextLength = 100_000
 // rejects payloads that are not a meaningful marketplace listing. Signals see
 // one predictable representation regardless of which adapter supplied it.
 func Normalize(input domain.Listing) (domain.Listing, error) {
+	if len(input.Images) > 24 || len(input.Captions) > 128 {
+		return domain.Listing{}, fmt.Errorf("listing has too many images or captions")
+	}
+	total := len(input.Title) + len(input.Description) + len(input.URL) + len(input.Contact.Email) + len(input.Contact.Phone)
+	for _, values := range [][]string{input.Images, input.Captions} {
+		for _, value := range values {
+			if len(value) > 4096 {
+				return domain.Listing{}, fmt.Errorf("image URL or caption exceeds size limit")
+			}
+			total += len(value)
+		}
+	}
+	if total > 400_000 || len(input.URL) > 4096 {
+		return domain.Listing{}, fmt.Errorf("listing exceeds size limit")
+	}
 	listing := input
 	listing.Marketplace = strings.ToLower(strings.TrimSpace(listing.Marketplace))
 	listing.URL = strings.TrimSpace(listing.URL)

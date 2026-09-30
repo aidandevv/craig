@@ -11,6 +11,7 @@ export async function testVisionKey(apiKey: string, fetchImpl: typeof fetch = fe
   try {
     const response = await fetchImpl(ENDPOINT, {
       method: "POST",
+      redirect: "error",
       headers: { "Content-Type": "application/json", "X-Goog-Api-Key": apiKey },
       body: JSON.stringify({ requests: [] }),
       signal: AbortSignal.timeout(8_000)

@@ -61,13 +61,10 @@ func (e *Engine) Analyze(ctx context.Context, listing domain.Listing, opts Optio
 	return risk.Assess(results, e.compiled, time.Since(started)), nil
 }
 
-// PrepareRuleSet validates a user rule set, applies every upgrade migration,
-// and round-trips it through the strict parser. An invalid payload is rejected
-// before migrations run, so an empty set cannot become valid merely because a
-// newer build has more defaults to add.
-func PrepareRuleSet(set rules.RuleSet) (rules.RuleSet, []byte, error) {
+// UpgradeRuleSet validates before migration so defaults cannot repair an invalid payload.
+func UpgradeRuleSet(set rules.RuleSet) (rules.RuleSet, error) {
 	if err := rules.Validate(set); err != nil {
-		return rules.RuleSet{}, nil, err
+		return rules.RuleSet{}, err
 	}
 	for _, migrate := range []func(*rules.RuleSet) (bool, error){
 		rules.MigrateApplicationFeeRule,
@@ -76,8 +73,17 @@ func PrepareRuleSet(set rules.RuleSet) (rules.RuleSet, []byte, error) {
 		rules.MigratePrepaymentBeforeAccessRule,
 	} {
 		if _, err := migrate(&set); err != nil {
-			return rules.RuleSet{}, nil, fmt.Errorf("migrate rules: %w", err)
+			return rules.RuleSet{}, fmt.Errorf("migrate rules: %w", err)
 		}
+	}
+	return set, rules.Validate(set)
+}
+
+// PrepareRuleSet upgrades rules and round-trips them through the strict YAML parser.
+func PrepareRuleSet(set rules.RuleSet) (rules.RuleSet, []byte, error) {
+	set, err := UpgradeRuleSet(set)
+	if err != nil {
+		return rules.RuleSet{}, nil, err
 	}
 	data, err := yaml.Marshal(set)
 	if err != nil {

@@ -128,13 +128,13 @@ test("badge renders a collapsed trace with only safe event text", () => {
 	assert.doesNotMatch(trace.textContent || "", /Bearer|API key/);
 });
 
-test("badge calls the options callback when configuration is needed", () => {
+test("badge rejects synthetic settings clicks", () => {
 	const dom = new JSDOM("<!doctype html><html><body></body></html>");
 	let opened = 0;
 	renderError(dom.window.document, "Craig could not analyze this listing.", () => { opened++; });
 	const shadow = dom.window.document.querySelector("#craig-extension-badge")?.shadowRoot!;
 	(shadow.querySelector("button") as HTMLButtonElement).click();
-	assert.equal(opened, 1);
+	assert.equal(opened, 0);
 	assert.match(shadow.textContent || "", /Analysis unavailable/);
 	assert.doesNotMatch(shadow.textContent || "", /helper|daemon/i);
 });
@@ -161,4 +161,14 @@ test("badge explains why the local HUD comparison was not evaluated", () => {
   }, false, () => undefined);
   const shadow = dom.window.document.getElementById("craig-extension-badge")!.shadowRoot!;
   assert.match(shadow.textContent || "", /No bundled HUD benchmark is available for this ZIP and bedroom count/);
+});
+
+
+test("badge rejects synthetic billable recheck clicks", () => {
+ const dom = new JSDOM("<body></body>");
+ let reruns = 0;
+ renderAssessment(dom.window.document, assessment, false, () => {}, [], () => { reruns++; });
+ const shadow = dom.window.document.getElementById("craig-extension-badge")!.shadowRoot!;
+ (shadow.querySelector(".recheck") as HTMLButtonElement).click();
+ assert.equal(reruns, 0);
 });

@@ -1,7 +1,10 @@
 package rules
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 
@@ -13,8 +16,16 @@ import (
 // than silently never matching.
 func Parse(data []byte) (RuleSet, error) {
 	var set RuleSet
-	if err := yaml.Unmarshal(data, &set); err != nil {
+	if len(data) > 1<<20 {
+		return RuleSet{}, fmt.Errorf("rules: file exceeds size limit")
+	}
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&set); err != nil {
 		return RuleSet{}, fmt.Errorf("rules: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return RuleSet{}, fmt.Errorf("rules: trailing YAML document")
 	}
 	if err := set.validate(); err != nil {
 		return RuleSet{}, err
@@ -28,7 +39,12 @@ func Validate(set RuleSet) error { return set.validate() }
 
 // Load reads a rule set from disk.
 func Load(path string) (RuleSet, error) {
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
+	if err != nil {
+		return RuleSet{}, fmt.Errorf("rules: %w", err)
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, (1<<20)+1))
 	if err != nil {
 		return RuleSet{}, fmt.Errorf("rules: %w", err)
 	}
@@ -40,6 +56,36 @@ func Load(path string) (RuleSet, error) {
 }
 
 func (s RuleSet) validate() error {
+	if len(s.Rules) > 256 {
+		return fmt.Errorf("rules: at most 256 rules are allowed")
+	}
+	total := len(s.Version)
+	entries := 0
+	for name, rule := range s.Rules {
+		total += len(name) + len(rule.Description) + len(rule.Type) + len(rule.Scope) + len(rule.Severity) + len(rule.Method) + len(rule.Match.Preset) + len(rule.FeeCheckKind)
+		for _, values := range [][]string{rule.Match.Custom, rule.Checks, rule.FlagsMatching, rule.TextMatching} {
+			entries += len(values)
+			if entries > 1024 {
+				return fmt.Errorf("rules: at most 1024 pattern and check entries are allowed")
+			}
+			if len(values) > 64 {
+				return fmt.Errorf("rules: at most 64 entries per pattern or check list are allowed")
+			}
+			for _, value := range values {
+				if len(value) > 4096 {
+					return fmt.Errorf("rules: pattern or check exceeds size limit")
+				}
+				total += len(value)
+			}
+		}
+		if len(name) > 128 || len(rule.Description) > 4096 || total > 256_000 {
+			return fmt.Errorf("rules: rule data exceeds size limit")
+		}
+	}
+	if total > 256_000 {
+		return fmt.Errorf("rules: rule data exceeds size limit")
+	}
+
 	if s.Version == "" {
 		return fmt.Errorf("rules: version is required")
 	}

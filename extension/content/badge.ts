@@ -127,14 +127,14 @@ function actionRow(document: Document, onOpenOptions: () => void, onRerun: (() =
 		const again = el(document, "button", rerunLabel) as HTMLButtonElement;
 		again.type = "button";
 		again.className = "recheck";
-		again.title = "Run every check again and refresh the photo results";
-		again.addEventListener("click", onRerun);
+		again.title = "Run checks using cached photo results. Use the toolbar to refresh photos.";
+		again.addEventListener("click", (event) => { if (event.isTrusted) onRerun(); });
 		actions.append(again);
 	}
 	const settings = el(document, "button", "Settings") as HTMLButtonElement;
 	settings.type = "button";
 	settings.className = "settings";
-	settings.addEventListener("click", onOpenOptions);
+	settings.addEventListener("click", (event) => { if (event.isTrusted) onOpenOptions(); });
 	actions.append(settings);
 	return actions;
 }
@@ -455,7 +455,8 @@ function skipReason(reason: string): string {
 		market_rent_inputs_missing: "Needs a listed monthly USD price and a studio-to-four-bedroom count",
 		market_rent_benchmark_unavailable: "No bundled HUD benchmark is available for this ZIP and bedroom count",
 		rent_price_inputs_missing: "Needs a listed page price and a title with a dollar amount",
-		provider_error: "Provider could not complete the check"
+		photo_refresh_required: "Use the extension toolbar to check photos",
+			provider_error: "Provider could not complete the check"
 	};
 	return labels[reason] || humanize(reason);
 }

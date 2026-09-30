@@ -31,3 +31,32 @@ test("loadEngine is memoized across concurrent callers and scores offline", asyn
 test("craigPrepareRules rejects an empty rule set", async () => {
   await assert.rejects(globalThis.craigPrepareRules!("{}"));
 });
+
+test("bridge recovers from host panic and times out unsettled storage safely", async () => {
+  const store = globalThis.craigStore!;
+  const get = store.getEvidence;
+  const reserve = store.reserveUnit;
+  const request = JSON.stringify({
+    listing: { marketplace: "craigslist", listing_url: "https://sfbay.craigslist.org/apa/1.html", title: "Studio", images: ["https://images.craigslist.org/a.jpg"], contact: {} },
+    vision: { api_key: "test-key", monthly_cap: 999, max_images: 4 }
+  });
+  try {
+    store.reserveUnit = () => { throw new Error("host failure"); };
+    const failed = JSON.parse(await globalThis.craigAnalyze!(request));
+    assert.ok(failed.not_evaluated.some((row: { reason: string }) => row.reason === "provider_error"));
+    const settlers: ((value: boolean) => void)[] = [];
+    store.reserveUnit = () => new Promise<boolean>(resolve => { settlers.push(resolve); });
+    const raw = await Promise.race([
+      globalThis.craigAnalyze!(request),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("storage wait hung")), 7_000).unref())
+    ]);
+    assert.ok(JSON.parse(raw).not_evaluated.some((row: { reason: string }) => row.reason === "provider_error"));
+    settlers.forEach(settle => settle(false));
+    store.reserveUnit = reserve;
+    await assert.rejects(globalThis.craigPrepareRules!("{}"));
+    assert.ok(JSON.parse(await globalThis.craigDefaultRules!()).rules);
+  } finally {
+    store.getEvidence = get;
+    store.reserveUnit = reserve;
+  }
+});

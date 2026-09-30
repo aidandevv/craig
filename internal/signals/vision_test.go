@@ -346,7 +346,7 @@ func TestOCRInspectsEveryListingImage(t *testing.T) {
 func TestValidateImageURL(t *testing.T) {
 	cases := map[string]bool{
 		"https://images.craigslist.org/a.jpg":      true,
-		"http://images.craigslist.org/a.jpg":       true,
+		"http://images.craigslist.org/a.jpg":       false,
 		"file:///etc/passwd":                       false,
 		"https://images.example.com/a.jpg":         false,
 		"https://images.craigslist.org:8443/a.jpg": false,
@@ -432,5 +432,55 @@ func TestVisionUsesAnyEvidenceStore(t *testing.T) {
 	}
 	if store.units[FeatureWebDetection] != 1 {
 		t.Errorf("reserved units = %d, want 1", store.units[FeatureWebDetection])
+	}
+}
+
+func TestVisionKeyOnlyInHeader(t *testing.T) {
+	vision, _ := newVision(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Goog-Api-Key") != "test-key" {
+			t.Error("API key header missing")
+		}
+		if r.URL.RawQuery != "" {
+			t.Error("credential must never enter request URL")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(webDetectionBody()))
+	}, 10)
+	if _, err := vision.annotate(context.Background(), "https://images.craigslist.org/a.jpg", "WEB_DETECTION"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCacheOnlyNeverCallsProviderOrReservesUnits(t *testing.T) {
+	store := newMemoryStore()
+	vision := NewVision(store, nil, Options{APIKey: "test-key", MonthlyCap: 10})
+	ctx := WithCachedImages(context.Background())
+	image := "https://images.craigslist.org/a.jpg"
+	if _, err := vision.annotate(ctx, image, "WEB_DETECTION"); skipReason(err) != domain.SkipPhotoRefreshRequired {
+		t.Fatalf("cache miss: %v", err)
+	}
+	if len(store.units) != 0 {
+		t.Fatal("cache-only request reserved billable units")
+	}
+	evidence := map[string]any{"cached": true}
+	_ = store.PutEvidence(ctx, hashURL(image), "WEB_DETECTION", evidence, time.Now())
+	got, err := vision.annotate(ctx, image, "WEB_DETECTION")
+	if err != nil || got["cached"] != true {
+		t.Fatalf("cached evidence not returned: %v, %v", got, err)
+	}
+}
+
+func TestVisionDoesNotForwardCredentialsOnRedirect(t *testing.T) {
+	var forwarded int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { atomic.AddInt32(&forwarded, 1) }))
+	defer target.Close()
+	vision, _ := newVision(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}, 10)
+	if _, err := vision.annotate(context.Background(), "https://images.craigslist.org/a.jpg", "WEB_DETECTION"); err == nil {
+		t.Fatal("redirect accepted")
+	}
+	if atomic.LoadInt32(&forwarded) != 0 {
+		t.Fatal("credential-bearing redirect followed")
 	}
 }

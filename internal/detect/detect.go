@@ -33,6 +33,12 @@ func Evaluate(ctx context.Context, detectors []Detector, listing domain.Listing)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			// Each detector owns its goroutine; the caller cannot recover its panic.
+			defer func() {
+				if recover() != nil {
+					results <- domain.SignalResult{Name: detector.Name(), Skipped: domain.SkipProviderError, Details: []string{"detector failed"}}
+				}
+			}()
 			started := time.Now()
 			trace.Log(ctx, "detector", "%s started", detector.Name())
 			result, err := detector.Evaluate(ctx, listing)

@@ -80,3 +80,17 @@ func TestEvaluateNoDetectors(t *testing.T) {
 		t.Errorf("got %d results, want 0", len(got))
 	}
 }
+
+type panickingDetector struct{}
+
+func (panickingDetector) Name() string { return "panic" }
+func (panickingDetector) Evaluate(context.Context, domain.Listing) (domain.SignalResult, error) {
+	panic("sensitive host error")
+}
+
+func TestEvaluateRecoversDetectorPanic(t *testing.T) {
+	got := Evaluate(context.Background(), []Detector{panickingDetector{}, stub{name: "healthy"}}, domain.Listing{})
+	if len(got) != 2 || got[1].Skipped != domain.SkipProviderError || got[1].Details[0] != "detector failed" {
+		t.Fatalf("panic was not safely isolated: %+v", got)
+	}
+}
