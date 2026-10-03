@@ -85,7 +85,7 @@ Excerpt from an actual offline run with the embedded rules and no Vision key:
 
 ```text
 Risk 1.00  HIGH  (hard flag)
-10 of 15 checks ran in 0ms
+11 of 16 checks ran in 0ms
 
 HIGH RISK
   • Owner claims to be unreachable in person
@@ -96,10 +96,9 @@ POTENTIALLY RISKY
   • High-pressure language discouraging due diligence
 
 NOT EVALUATED (5)
-
-  market_rent_below_hud              market_rent_inputs_missing
-  rent_price_mismatch                rent_price_inputs_missing
+  market_rent_below_hud            market_rent_inputs_missing
   mls_watermark                    no_api_key
+  rent_price_mismatch              rent_price_inputs_missing
   reverse_image_real_estate        no_api_key
   stock_photos                     no_api_key
 ```
@@ -203,8 +202,7 @@ omits credentials, listing text, and image URLs.
 
 The same Options page has a rule builder for curated pattern checks. It
 preserves custom, contact, image, and regex rules as read-only cards when a
-visual edit is saved. See [docs/custom-rules.md](docs/custom-rules.md) for the
-builder and YAML workflows.
+visual edit is saved.
 
 ## Development
 
@@ -219,8 +217,3 @@ make extension-test  # fixture and badge tests
 make extension-build # typecheck and build the unpacked MV3 artifact
 make dev             # build the extension and helper, then run the helper verbosely
 ```
-
-## Documents
-
-- [docs/design.md](docs/design.md) — full design spec, decisions, and build order
-- [docs/custom-rules.md](docs/custom-rules.md) — visual builder and YAML guide
