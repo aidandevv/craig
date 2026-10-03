@@ -18,7 +18,7 @@ const assessment: Assessment = {
 	analysis_time_ms: 12
 };
 
-test("badge keeps coverage and meaningful risk groups visible without injecting daemon text as HTML", () => {
+test("badge keeps coverage and meaningful risk groups visible without injecting engine text as HTML", () => {
 	const dom = new JSDOM("<!doctype html><html><body></body></html>");
 	renderAssessment(dom.window.document, assessment, false, () => undefined);
 	const shadow = dom.window.document.querySelector("#craig-extension-badge")?.shadowRoot;
@@ -131,11 +131,12 @@ test("badge renders a collapsed trace with only safe event text", () => {
 test("badge calls the options callback when configuration is needed", () => {
 	const dom = new JSDOM("<!doctype html><html><body></body></html>");
 	let opened = 0;
-	renderError(dom.window.document, "Could not reach the Craig helper at http://127.0.0.1:8765.", () => { opened++; });
+	renderError(dom.window.document, "Craig could not analyze this listing.", () => { opened++; });
 	const shadow = dom.window.document.querySelector("#craig-extension-badge")?.shadowRoot!;
 	(shadow.querySelector("button") as HTMLButtonElement).click();
 	assert.equal(opened, 1);
-	assert.match(shadow.textContent || "", /Craig helper not running/);
+	assert.match(shadow.textContent || "", /Analysis unavailable/);
+	assert.doesNotMatch(shadow.textContent || "", /helper|daemon/i);
 });
 
 test("badge ignores legacy visual candidates and shows incomplete photo coverage", () => {

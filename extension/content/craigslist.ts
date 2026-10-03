@@ -5,7 +5,7 @@ const emailPattern = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
 
 // extractListing deliberately understands only the stable Craigslist listing
 // shape. It is pure DOM-to-data code so selectors can be tested with a saved
-// fixture and changed without touching the daemon's marketplace-neutral API.
+// fixture and changed without touching the engine's marketplace-neutral API.
 export function extractListing(document: Document): ListingPayload {
   const title = textOf(document, "#titletextonly, #postingtitle .postingtitletext") ||
     document.title.replace(/\s*-\s*craigslist(?:\s|$).*/i, "").trim();
