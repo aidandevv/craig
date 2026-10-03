@@ -69,11 +69,13 @@ make extension-build
 
 Open `chrome://extensions`, turn on **Developer mode**, choose **Load
 unpacked**, and select the repository's `extension` directory. Open any
-Craigslist listing and click the Craig toolbar icon to analyze it.
+Craigslist listing (HTTPS, Chrome 120 or later) and click the Craig toolbar
+icon to analyze it.
 
 Release packages are built by CI: pushing a `web-v<version>` tag that matches
-`extension/manifest.json` creates a draft GitHub release containing the zip to
-upload to the Chrome Web Store.
+`extension/manifest.json` and points at a commit on `main` creates a draft
+GitHub release containing the zip to upload to the Chrome Web Store. See
+[SECURITY.md](SECURITY.md) for the extension's security boundaries.
 
 ## Using the extension
 
@@ -93,8 +95,10 @@ Each uncached photo uses one `WEB_DETECTION` request (shared by the reverse
 image and stock-photo rules) and one `TEXT_DETECTION` OCR request (for the MLS
 watermark rule). Only photos from `images.craigslist.org` are sent. Results are
 cached for 24 hours and re-scored against your current rules on every analysis.
-The badge's **Check again** button bypasses that cache while still respecting the
-monthly limit. Failed photos are reported as incomplete. Only matching pages
+Clicking the Craig toolbar icon checks photos fresh, within the monthly limit.
+The badge's **Check again** button reruns the checks using cached photo
+results. With auto-run off, Craig never calls Vision without a toolbar click.
+Failed photos are reported as incomplete. Only matching pages
 and full/partial image matches are used; visually similar suggestions are
 ignored.
 

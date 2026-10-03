@@ -456,7 +456,7 @@ function skipReason(reason: string): string {
 		market_rent_benchmark_unavailable: "No bundled HUD benchmark is available for this ZIP and bedroom count",
 		rent_price_inputs_missing: "Needs a listed page price and a title with a dollar amount",
 		photo_refresh_required: "Use the extension toolbar to check photos",
-			provider_error: "Provider could not complete the check"
+		provider_error: "Provider could not complete the check"
 	};
 	return labels[reason] || humanize(reason);
 }
