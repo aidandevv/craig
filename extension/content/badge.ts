@@ -2,7 +2,7 @@ import type { Assessment, Finding, NotEvaluated, TraceEvent } from "../shared/ty
 
 const hostID = "craig-extension-badge";
 
-// Rotates under the loading video so a long-running daemon call still reads as progress
+// Rotates under the loading video so a long-running analysis still reads as progress
 // rather than a stall. Held on the module because panelFor() rebuilds the panel's DOM on
 // every render, which would otherwise orphan a running interval.
 const LOADING_MESSAGES: readonly string[] = [
@@ -49,10 +49,7 @@ export function renderLoading(document: Document): void {
 
 export function renderError(document: Document, message: string, onOpenOptions: () => void, trace: TraceEvent[] = [], onRetry?: () => void): void {
 	const panel = panelFor(document);
-	const unreachable = message.startsWith("Could not reach the Craig helper");
-	renderHeader(panel, unreachable ? "Craig helper not running" : "Analysis unavailable", unreachable
-		? "The listing was not analyzed."
-		: "The listing could not be analyzed.");
+	renderHeader(panel, "Analysis unavailable", "The listing could not be analyzed.");
 	panel.append(el(document, "p", message));
 	appendTrace(document, panel, trace);
 	panel.append(actionRow(document, onOpenOptions, onRetry, "Try again"));
@@ -90,10 +87,9 @@ const CONCERN_COPY: Record<ConcernState, { heading: string; subheading: string }
 export function renderAssessment(document: Document, assessment: Assessment, cached: boolean, onOpenOptions: () => void, trace: TraceEvent[] = [], onRecheck?: () => void): void {
 	const panel = panelFor(document);
 	const score = Math.round(Math.max(0, Math.min(1, assessment.risk_score)) * 100);
-	// Current daemons emit empty result groups as [], but retain this boundary
-	// guard for an already-running older daemon that encoded absent Go slices as
-	// null. A successful analysis should never fail while rendering its empty
-	// sections.
+	// The engine emits empty result groups as [], but Go can encode absent
+	// slices as null. A successful analysis should never fail while rendering
+	// its empty sections.
 	const highRisk = assessment.high_risk ?? [];
 	const potentiallyRisky = assessment.potentially_risky ?? [];
 	const positiveSignals = assessment.positive_signals ?? [];
@@ -347,11 +343,11 @@ function appendNotEvaluated(document: Document, panel: HTMLElement, entries: Not
 function appendTrace(document: Document, panel: HTMLElement, events: TraceEvent[]): void {
 	const { card: details, body } = checkCase(document, "Verified execution log", `${events.length} events`, "neutral", false);
 	details.classList.add("trace");
-	const note = el(document, "p", "Events are produced by the extension and the Craig helper. Secrets, listing text, and image URLs are excluded.");
+	const note = el(document, "p", "Events are produced by the extension and its built-in engine. Secrets, listing text, and image URLs are excluded.");
 	note.className = "trace-note";
 	const output = document.createElement("pre");
 	output.textContent = events.length === 0
-		? "No execution events were returned. Reload the extension and restart the Craig helper after updating."
+		? "No execution events were returned. Reload the extension and try again."
 		: events.map((event) => `${formatTime(event.timestamp)} ${event.step.padEnd(10)} ${event.message}`).join("\n");
 	body.append(note, output);
 	panel.append(details);
