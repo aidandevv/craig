@@ -86,7 +86,8 @@ export const defaultSettings: Settings = {
 };
 
 export type WorkerRequest =
-  | { type: "ANALYZE_LISTING"; listing: ListingPayload; force?: boolean }
+  | { type: "ANALYZE_LISTING"; listing: ListingPayload; force?: boolean; refreshToken?: string }
+  | { type: "AUTO_RUN_GET" }
   | { type: "OPEN_OPTIONS" }
   | { type: "RULES_GET" }
   | { type: "RULES_PUT"; rules: unknown }

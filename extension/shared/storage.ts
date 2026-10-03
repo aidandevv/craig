@@ -5,7 +5,7 @@ import { defaultSettings, type Settings } from "./types";
 // key) and the non-secret session cache explicit, while also surfacing
 // storage failures to callers.
 const positiveInt = (value: unknown, fallback: number): number =>
-	typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : fallback;
+	typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= 1_000_000 ? value : fallback;
 
 export async function loadSettings(): Promise<Settings> {
 	const defaults: Record<string, unknown> = { ...defaultSettings };
@@ -13,7 +13,7 @@ export async function loadSettings(): Promise<Settings> {
 	return {
 		visionApiKey: typeof values.visionApiKey === "string" ? values.visionApiKey : defaultSettings.visionApiKey,
 		monthlyCap: positiveInt(values.monthlyCap, defaultSettings.monthlyCap),
-		maxPhotos: positiveInt(values.maxPhotos, defaultSettings.maxPhotos),
+		maxPhotos: Math.min(24, positiveInt(values.maxPhotos, defaultSettings.maxPhotos)),
 		autoRun: typeof values.autoRun === "boolean" ? values.autoRun : defaultSettings.autoRun
 	};
 }

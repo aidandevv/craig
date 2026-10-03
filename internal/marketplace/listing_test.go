@@ -46,3 +46,10 @@ func TestNormalizeRejectsIncompleteOrUnsafePayloads(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeRejectsOversizedCaptions(t *testing.T) {
+	_, err := Normalize(domain.Listing{Marketplace: "craigslist", URL: "https://sfbay.craigslist.org/apa/1.html", Title: "Studio", Captions: []string{strings.Repeat("a", 4097)}})
+	if err == nil {
+		t.Fatal("oversized caption accepted")
+	}
+}

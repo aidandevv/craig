@@ -1,30 +1,30 @@
 import { extractListing } from "./craigslist";
 import { renderAssessment, renderError, renderLoading } from "./badge";
-import { loadSettings } from "../shared/storage";
 import type { TraceEvent, WorkerResponse } from "../shared/types";
 
-chrome.runtime.onMessage.addListener((message: { type?: string; force?: boolean }) => {
+chrome.runtime.onMessage.addListener((message: { type?: string; force?: boolean; refreshToken?: string }, sender) => {
+	if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL("dist/background/worker.js")) return;
 	if (message.type === "ANALYZE_CURRENT_LISTING") {
-		void analyze(Boolean(message.force));
+		void analyze(Boolean(message.force), message.refreshToken);
 	}
 });
 
-void loadSettings().then((settings) => {
-	if (settings.autoRun) {
+void chrome.runtime.sendMessage({ type: "AUTO_RUN_GET" }).then((settings) => {
+	if (settings?.ok && settings.autoRun) {
 		void analyze(false);
 	}
-});
+}).catch(() => undefined);
 
-async function analyze(force: boolean): Promise<void> {
+async function analyze(force: boolean, refreshToken?: string): Promise<void> {
 	try {
 		const listing = extractListing(document);
 		renderLoading(document);
-		const result = await chrome.runtime.sendMessage({ type: "ANALYZE_LISTING", listing, force }) as WorkerResponse;
+		const result = await chrome.runtime.sendMessage({ type: "ANALYZE_LISTING", listing, force, refreshToken }) as WorkerResponse;
 		if (result.ok) {
-			renderAssessment(document, result.assessment, result.cached, openOptions, result.trace, () => void analyze(true));
+			renderAssessment(document, result.assessment, result.cached, openOptions, result.trace, () => void analyze(false));
 			return;
 		}
-		renderError(document, result.error, openOptions, result.trace, () => void analyze(true));
+		renderError(document, result.error, openOptions, result.trace, () => void analyze(false));
 	} catch (error) {
 		const message = error instanceof Error ? error.message : "Unable to extract this listing.";
 		renderError(document, message, openOptions, [{ timestamp: new Date().toISOString(), step: "extension", message }]);

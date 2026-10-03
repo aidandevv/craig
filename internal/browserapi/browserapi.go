@@ -24,11 +24,14 @@ import (
 // Vision on the same schedule.
 const EvidenceTTL = 24 * time.Hour
 
+const MaxRequestBytes = 1 << 20
+
 type AnalyzeRequest struct {
-	Listing domain.Listing `json:"listing"`
-	Rules   *rules.RuleSet `json:"rules,omitempty"`
-	Fresh   bool           `json:"fresh,omitempty"`
-	Vision  VisionSettings `json:"vision"`
+	Listing   domain.Listing `json:"listing"`
+	Rules     *rules.RuleSet `json:"rules,omitempty"`
+	Fresh     bool           `json:"fresh,omitempty"`
+	CacheOnly bool           `json:"cache_only,omitempty"`
+	Vision    VisionSettings `json:"vision"`
 }
 
 type VisionSettings struct {
@@ -54,6 +57,9 @@ func (h Host) Analyze(ctx context.Context, raw []byte) ([]byte, error) {
 	if err := decodeStrict(raw, &req); err != nil {
 		return nil, fmt.Errorf("invalid request: %w", err)
 	}
+	if req.Vision.MaxImages < 1 || req.Vision.MaxImages > 24 || req.Vision.MonthlyCap < 1 || req.Vision.MonthlyCap > 1_000_000 {
+		return nil, errors.New("invalid Vision limits")
+	}
 	set, err := h.ruleSet(req.Rules)
 	if err != nil {
 		return nil, err
@@ -73,6 +79,9 @@ func (h Host) Analyze(ctx context.Context, raw []byte) ([]byte, error) {
 	}
 	recorder := trace.NewRecorder(func(trace.Event) {})
 	ctx = trace.WithSink(ctx, recorder)
+	if req.CacheOnly {
+		ctx = signals.WithCachedImages(ctx)
+	}
 	if req.Fresh {
 		ctx = signals.WithFreshImages(ctx)
 	}
@@ -87,8 +96,7 @@ func (h Host) ruleSet(stored *rules.RuleSet) (rules.RuleSet, error) {
 	if stored == nil {
 		return rules.DefaultRuleSet()
 	}
-	set, _, err := engine.PrepareRuleSet(*stored)
-	return set, err
+	return engine.UpgradeRuleSet(*stored)
 }
 
 func PrepareRules(raw []byte) ([]byte, error) {
@@ -141,6 +149,9 @@ func DecodeEvidence(raw string, now time.Time) (map[string]any, time.Time, bool)
 }
 
 func decodeStrict(raw []byte, out any) error {
+	if len(raw) > MaxRequestBytes {
+		return errors.New("request exceeds size limit")
+	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(out); err != nil {

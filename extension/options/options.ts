@@ -76,9 +76,9 @@ async function saveVision(): Promise<void> {
 		setVisionStatus("Photos to check must be a whole number from 1 to 24.", true);
 		return;
 	}
-	const monthlyCap = parseLimit(monthlyCapInput, 1, Number.MAX_SAFE_INTEGER);
+	const monthlyCap = parseLimit(monthlyCapInput, 1, 1_000_000);
 	if (monthlyCap === undefined) {
-		setVisionStatus("The monthly limit must be a whole number of 1 or more.", true);
+		setVisionStatus("The monthly limit must be a whole number from 1 to 1,000,000.", true);
 		return;
 	}
 	try {

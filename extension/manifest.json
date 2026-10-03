@@ -9,9 +9,7 @@
     "storage"
   ],
   "host_permissions": [
-    "https://vision.googleapis.com/*",
-    "http://*.craigslist.org/*",
-    "https://*.craigslist.org/*"
+    "https://vision.googleapis.com/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
@@ -31,7 +29,6 @@
   "content_scripts": [
     {
       "matches": [
-        "http://*.craigslist.org/*",
         "https://*.craigslist.org/*"
       ],
       "js": [
@@ -60,9 +57,9 @@
         "assets/craig-incomplete.png"
       ],
       "matches": [
-        "http://*.craigslist.org/*",
         "https://*.craigslist.org/*"
       ]
     }
-  ]
+  ],
+  "minimum_chrome_version": "120"
 }
