@@ -127,3 +127,22 @@ test("extractListing collects photos omitted by partial thumbnail links without 
     "https://images.craigslist.org/c_1200x900.jpg"
   ]);
 });
+
+test("extractListing merges cropped thumbnails with their full-size photos", () => {
+  // Current Craigslist pages pair each _600x450 link with a cropped _50x50c thumbnail.
+  const thumbs = Array.from({ length: 13 }, (_, i) =>
+    `<a href="https://images.craigslist.org/p${i}_600x450.jpg"><img src="https://images.craigslist.org/p${i}_50x50c.jpg"></a>`).join("");
+  const dom=new JSDOM(`<title>Studio</title><div class="gallery"><img src="https://images.craigslist.org/p0_600x450.jpg"></div><div id="thumbs">${thumbs}</div>`,
+    {url:"https://www.craigslist.org/view/d/oakland-studio/abc123"});
+  const images = extractListing(dom.window.document).images!;
+  assert.equal(images.length, 13);
+  assert.ok(images.every((url) => url.endsWith("_1200x900.jpg")));
+});
+
+test("extractListing sends at most 24 photos", () => {
+  const thumbs = Array.from({ length: 30 }, (_, i) => `<a href="https://images.craigslist.org/p${i}_600x450.jpg"></a>`).join("");
+  const dom=new JSDOM(`<title>Studio</title><div id="thumbs">${thumbs}</div>`,{url:"https://www.craigslist.org/view/d/oakland-studio/abc123"});
+  const images = extractListing(dom.window.document).images!;
+  assert.equal(images.length, 24);
+  assert.equal(images[0], "https://images.craigslist.org/p0_1200x900.jpg");
+});

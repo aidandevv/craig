@@ -2,6 +2,7 @@ import type { ListingPayload } from "../shared/types";
 
 const phonePattern = /(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}/;
 const emailPattern = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
+const maxImages = 24;
 
 // extractListing deliberately understands only the stable Craigslist listing
 // shape. It is pure DOM-to-data code so selectors can be tested with a saved
@@ -135,7 +136,8 @@ function imageURLs(document: Document): string[] {
     if (!/^https?:/i.test(raw)) return;
     const url = new URL(raw);
     if (url.hostname === "images.craigslist.org") {
-      url.pathname = url.pathname.replace(/_\d+x\d+\.(jpg|jpeg|png)$/i, "_1200x900.$1");
+      // Size suffixes may carry a crop flag, as in _50x50c thumbnails.
+      url.pathname = url.pathname.replace(/_\d+x\d+[a-z]?\.(jpg|jpeg|png)$/i, "_1200x900.$1");
     }
     urls.add(url.href);
   };
@@ -143,7 +145,8 @@ function imageURLs(document: Document): string[] {
   // then deduplicate after size normalization so one photo costs one check.
   document.querySelectorAll<HTMLAnchorElement>("#thumbs a[href]").forEach((node) => add(node.href));
   document.querySelectorAll<HTMLImageElement>("#thumbs img[src], .gallery img[src], #ci img[src]").forEach((node) => add(node.src));
-  return [...urls];
+  // Craigslist allows 24 photos per post, and the worker rejects larger payloads.
+  return [...urls].slice(0, maxImages);
 }
 
 function imageCaptions(document: Document): string[] {
