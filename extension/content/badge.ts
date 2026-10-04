@@ -55,6 +55,13 @@ export function renderError(document: Document, message: string, onOpenOptions: 
 	panel.append(actionRow(document, onOpenOptions, onRetry, "Try again"));
 }
 
+/** A neutral note for Craigslist pages that are not a single listing. */
+export function renderNotListing(document: Document): void {
+	const panel = panelFor(document);
+	renderHeader(panel, "Open a listing to check it", "Craig checks one post at a time.");
+	panel.append(el(document, "p", "Open a single Craigslist listing, then click the Craig toolbar icon."));
+}
+
 /** Craig's concern states, least to most concerning, plus one non-band state for thin evidence. */
 type ConcernState = "low" | "caution" | "elevated" | "high" | "hard-flag" | "incomplete";
 

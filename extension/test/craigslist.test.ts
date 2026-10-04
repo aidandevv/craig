@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { JSDOM } from "jsdom";
 
-import { extractListing } from "../content/craigslist";
+import { extractListing, isListingPage } from "../content/craigslist";
 
 test("extractListing normalizes a saved Craigslist listing fixture", async () => {
   const fixture = await readFile(new URL("./fixtures/craigslist-listing.html", import.meta.url), "utf8");
@@ -145,4 +145,17 @@ test("extractListing sends at most 24 photos", () => {
   const images = extractListing(dom.window.document).images!;
   assert.equal(images.length, 24);
   assert.equal(images[0], "https://images.craigslist.org/p0_1200x900.jpg");
+});
+
+test("isListingPage accepts posts and rejects Craigslist home, search, and help pages", async () => {
+  const fixture = await readFile(new URL("./fixtures/craigslist-listing.html", import.meta.url), "utf8");
+  assert.equal(isListingPage(new JSDOM(fixture).window.document), true);
+  assert.equal(isListingPage(new JSDOM(`<span id="titletextonly">Boat trailer</span><section id="postingbody">Works great.</section>`).window.document), true);
+  for (const html of [
+    "<title>SF bay area - craigslist</title><div class=\"cl-search-results\"><a href=\"/view/d/a/b\">2BR</a></div>",
+    "<title>craigslist: help</title><h1>help</h1>",
+    "<title>Studio - craigslist</title><span id=\"titletextonly\">Studio</span>"
+  ]) {
+    assert.equal(isListingPage(new JSDOM(html).window.document), false, html);
+  }
 });
