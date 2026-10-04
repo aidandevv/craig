@@ -172,3 +172,61 @@ test("badge rejects synthetic billable recheck clicks", () => {
  (shadow.querySelector(".recheck") as HTMLButtonElement).click();
  assert.equal(reruns, 0);
 });
+
+const ocrCoverage = [{ signal: "ocr", checked: 3, total: 4, checked_at: "2026-10-04T12:00:00Z" }];
+
+function visibleText(element: Element): string {
+	// Text a reader sees without opening the technical-details disclosure.
+	const clone = element.cloneNode(true) as Element;
+	clone.querySelectorAll("details.tech").forEach((node) => node.remove());
+	return clone.textContent || "";
+}
+
+test("badge explains a photo watermark in plain language and tucks technical details away", () => {
+	const dom = new JSDOM("<body></body>");
+	renderAssessment(dom.window.document, {
+		...assessment,
+		high_risk: [{ rule: "mls_watermark", label: "Listing photo carries an agency or MLS watermark", detail: "image 2 — matched \"coldwell\"", weight: .3 }],
+		image_coverage: ocrCoverage
+	}, false, () => {});
+	const shadow = dom.window.document.getElementById("craig-extension-badge")!.shadowRoot!;
+	const card = [...shadow.querySelectorAll("details.check-case")].find((node) => /watermark/i.test(node.querySelector("summary")?.textContent || ""))!;
+	assert.ok(card);
+	assert.match(visibleText(card), /photo 2/i);
+	assert.match(visibleText(card), /coldwell/i);
+	assert.doesNotMatch(visibleText(card), /matched "|mls_watermark|Cloud Vision|OCR/);
+	const tech = card.querySelector("details.tech") as HTMLDetailsElement;
+	assert.ok(tech);
+	assert.equal(tech.open, false);
+	assert.match(tech.textContent || "", /image 2 — matched "coldwell"/);
+	assert.match(tech.textContent || "", /Google Cloud Vision text detection/);
+	assert.match(tech.textContent || "", /3 of 4 photos/);
+	assert.doesNotMatch(visibleText(shadow.querySelector(".panel")!), /Cloud Vision ocr/);
+	assert.match(visibleText(shadow.querySelector(".panel")!), /3 of 4 listing photos/);
+});
+
+test("badge describes a passed or skipped photo watermark check without rule jargon", () => {
+	for (const variant of [
+		{ passed_checks: ["mls_watermark"], not_evaluated: [], expected: /None of the listing photos/ },
+		{ passed_checks: [], not_evaluated: [{ rule: "mls_watermark", reason: "no_api_key" }], expected: /Settings/ }
+	]) {
+		const dom = new JSDOM("<body></body>");
+		renderAssessment(dom.window.document, { ...assessment, passed_checks: variant.passed_checks, not_evaluated: variant.not_evaluated, image_coverage: ocrCoverage }, false, () => {});
+		const shadow = dom.window.document.getElementById("craig-extension-badge")!.shadowRoot!;
+		const card = [...shadow.querySelectorAll("details.check-case")].find((node) => /watermark/i.test(node.querySelector("summary")?.textContent || ""))!;
+		assert.ok(card);
+		assert.doesNotMatch(card.querySelector("summary")!.textContent || "", /Mls|mls_watermark/);
+		assert.match(visibleText(card), variant.expected);
+		assert.doesNotMatch(visibleText(card), /mls_watermark|no_api_key|Cloud Vision|OCR/);
+		assert.match(card.querySelector("details.tech")?.textContent || "", /mls_watermark/);
+	}
+});
+
+test("badge ends every result with a short not-a-verdict disclaimer", () => {
+	const dom = new JSDOM("<body></body>");
+	renderAssessment(dom.window.document, assessment, false, () => {}, [], () => {});
+	const panel = dom.window.document.getElementById("craig-extension-badge")!.shadowRoot!.querySelector(".panel")!;
+	const last = panel.lastElementChild!;
+	assert.ok(last.classList.contains("disclaimer"));
+	assert.match(last.textContent || "", /not .*whether .*scam/i);
+});
