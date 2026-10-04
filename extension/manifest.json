@@ -4,6 +4,7 @@
   "short_name": "Craig",
   "version": "0.1.0",
   "description": "Local-first, explainable scam indicators for Craigslist listings.",
+  "homepage_url": "https://craig.aidandevaney.com/",
   "permissions": [
     "activeTab",
     "storage"
