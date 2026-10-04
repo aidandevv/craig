@@ -4,6 +4,14 @@ const phonePattern = /(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}/;
 const emailPattern = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
 const maxImages = 24;
 
+// isListingPage is true only on a single post. Craigslist's home, search, and
+// help pages share the content-script match pattern but have no posting body,
+// and analyzing them would report a reassuring result for a page that is not a
+// listing at all.
+export function isListingPage(document: Document): boolean {
+  return Boolean(document.querySelector("#postingbody") && document.querySelector("#titletextonly, #postingtitle .postingtitletext"));
+}
+
 // extractListing deliberately understands only the stable Craigslist listing
 // shape. It is pure DOM-to-data code so selectors can be tested with a saved
 // fixture and changed without touching the engine's marketplace-neutral API.

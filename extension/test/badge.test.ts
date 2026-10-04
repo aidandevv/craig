@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
 
-import { renderAssessment, renderError } from "../content/badge";
+import { renderAssessment, renderError, renderNotListing } from "../content/badge";
 import type { Assessment } from "../shared/types";
 
 const assessment: Assessment = {
@@ -229,4 +229,14 @@ test("badge ends every result with a short not-a-verdict disclaimer", () => {
 	const last = panel.lastElementChild!;
 	assert.ok(last.classList.contains("disclaimer"));
 	assert.match(last.textContent || "", /not .*whether .*scam/i);
+});
+
+test("badge shows a neutral note instead of a verdict on pages that are not listings", () => {
+	const dom = new JSDOM("<body></body>");
+	renderNotListing(dom.window.document);
+	const shadow = dom.window.document.getElementById("craig-extension-badge")!.shadowRoot!;
+	const text = shadow.textContent || "";
+	assert.match(text, /single Craigslist listing/);
+	assert.doesNotMatch(text, /concern|checks ran|scam likely|passed/i);
+	assert.equal(shadow.querySelector(".gauge"), null);
 });

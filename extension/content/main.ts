@@ -1,5 +1,5 @@
-import { extractListing } from "./craigslist";
-import { renderAssessment, renderError, renderLoading } from "./badge";
+import { extractListing, isListingPage } from "./craigslist";
+import { renderAssessment, renderError, renderLoading, renderNotListing } from "./badge";
 import type { TraceEvent, WorkerResponse } from "../shared/types";
 
 chrome.runtime.onMessage.addListener((message: { type?: string; force?: boolean; refreshToken?: string }, sender) => {
@@ -10,12 +10,16 @@ chrome.runtime.onMessage.addListener((message: { type?: string; force?: boolean;
 });
 
 void chrome.runtime.sendMessage({ type: "AUTO_RUN_GET" }).then((settings) => {
-	if (settings?.ok && settings.autoRun) {
+	if (settings?.ok && settings.autoRun && isListingPage(document)) {
 		void analyze(false);
 	}
 }).catch(() => undefined);
 
 async function analyze(force: boolean, refreshToken?: string): Promise<void> {
+	if (!isListingPage(document)) {
+		renderNotListing(document);
+		return;
+	}
 	try {
 		const listing = extractListing(document);
 		renderLoading(document);
