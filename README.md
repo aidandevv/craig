@@ -1,4 +1,4 @@
-# craig-extension
+# Craig
 
 A local-first scam detector for online marketplace listings.
 
@@ -8,14 +8,19 @@ explains every point of that score. Listing text never leaves your computer.
 The only network calls are optional photo checks, sent to Google Cloud Vision
 with your own API key.
 
-> Status: release candidate for the Chrome Web Store. The analysis engine runs
-> in the extension as WebAssembly, so there is nothing else to install. Not yet
-> published; see [Install](#install) to load it from source.
+> Status: submitted to the Chrome Web Store and awaiting review. The analysis
+> engine runs in the extension as WebAssembly, so there is nothing else to
+> install. Until the listing is live, see [Install](#install) to load it from
+> source.
+
+[Website](https://craig.aidandevaney.com/) ·
+[Privacy policy](https://craig.aidandevaney.com/privacy) ·
+[Security](SECURITY.md) · [MIT license](LICENSE)
 
 ## Why it exists
 
-This is the counterpart to [Apartment Hunter](https://github.com/aidandevv/craig),
-which pays an API to *find* listings and filter them down. That is a push model
+This is the counterpart to Apartment Hunter, an earlier project that pays an
+API to *find* listings and filter them down. That is a push model
 with a per-listing cost and a fixed idea of what you are shopping for. This
 inverts it: you find the listing, the tool judges it, and the expensive parts
 only run when you ask.
@@ -214,3 +219,8 @@ make tidy            # go mod tidy
 make extension-test  # fixture, badge, engine, and storage tests
 make extension-build # typecheck and build the unpacked MV3 extension
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE). To report a security issue, follow
+[SECURITY.md](SECURITY.md).
