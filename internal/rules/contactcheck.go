@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/aidandevv/craig-extension/internal/detect"
-	"github.com/aidandevv/craig-extension/internal/domain"
+	"github.com/aidandevv/craig/internal/detect"
+	"github.com/aidandevv/craig/internal/domain"
 )
 
 // Check names available to a contact_check rule.

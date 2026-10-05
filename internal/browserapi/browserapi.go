@@ -12,12 +12,12 @@ import (
 	"io"
 	"time"
 
-	"github.com/aidandevv/craig-extension/internal/domain"
-	"github.com/aidandevv/craig-extension/internal/engine"
-	"github.com/aidandevv/craig-extension/internal/risk"
-	"github.com/aidandevv/craig-extension/internal/rules"
-	"github.com/aidandevv/craig-extension/internal/signals"
-	"github.com/aidandevv/craig-extension/internal/trace"
+	"github.com/aidandevv/craig/internal/domain"
+	"github.com/aidandevv/craig/internal/engine"
+	"github.com/aidandevv/craig/internal/risk"
+	"github.com/aidandevv/craig/internal/rules"
+	"github.com/aidandevv/craig/internal/signals"
+	"github.com/aidandevv/craig/internal/trace"
 )
 
 // EvidenceTTL matches the daemon's SQLite cache so both builds re-query

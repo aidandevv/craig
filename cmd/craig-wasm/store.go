@@ -8,7 +8,7 @@ import (
 	"syscall/js"
 	"time"
 
-	"github.com/aidandevv/craig-extension/internal/browserapi"
+	"github.com/aidandevv/craig/internal/browserapi"
 )
 
 // hostStore implements signals.EvidenceStore over the extension's craigStore.

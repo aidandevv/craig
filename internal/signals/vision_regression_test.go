@@ -2,7 +2,7 @@ package signals
 
 import (
 	"context"
-	"github.com/aidandevv/craig-extension/internal/domain"
+	"github.com/aidandevv/craig/internal/domain"
 	"net/http"
 	"testing"
 )

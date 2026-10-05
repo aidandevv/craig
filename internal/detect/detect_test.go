@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/aidandevv/craig-extension/internal/domain"
+	"github.com/aidandevv/craig/internal/domain"
 )
 
 type stub struct {

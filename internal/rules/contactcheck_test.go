@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aidandevv/craig-extension/internal/detect"
-	"github.com/aidandevv/craig-extension/internal/domain"
+	"github.com/aidandevv/craig/internal/detect"
+	"github.com/aidandevv/craig/internal/domain"
 )
 
 func mustContactCheck(t *testing.T, name string, r Rule, weight float64) detect.Detector {

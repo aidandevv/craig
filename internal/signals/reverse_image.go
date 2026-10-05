@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/aidandevv/craig-extension/internal/domain"
-	"github.com/aidandevv/craig-extension/internal/trace"
+	"github.com/aidandevv/craig/internal/domain"
+	"github.com/aidandevv/craig/internal/trace"
 )
 
 // ReverseImage asks Vision where else on the web a listing's photo appears.

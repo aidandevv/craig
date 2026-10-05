@@ -14,10 +14,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/aidandevv/craig-extension/internal/cache"
-	"github.com/aidandevv/craig-extension/internal/config"
-	"github.com/aidandevv/craig-extension/internal/daemon"
-	"github.com/aidandevv/craig-extension/internal/signals"
+	"github.com/aidandevv/craig/internal/cache"
+	"github.com/aidandevv/craig/internal/config"
+	"github.com/aidandevv/craig/internal/daemon"
+	"github.com/aidandevv/craig/internal/signals"
 )
 
 const (

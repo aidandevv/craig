@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/aidandevv/craig-extension/internal/domain"
-	"github.com/aidandevv/craig-extension/internal/trace"
+	"github.com/aidandevv/craig/internal/domain"
+	"github.com/aidandevv/craig/internal/trace"
 )
 
 // OCR reads text baked into a listing photo. Watermarks are the target: an MLS

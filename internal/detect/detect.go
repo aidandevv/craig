@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aidandevv/craig-extension/internal/domain"
-	"github.com/aidandevv/craig-extension/internal/trace"
+	"github.com/aidandevv/craig/internal/domain"
+	"github.com/aidandevv/craig/internal/trace"
 )
 
 // Detector is one independent check. Implementations must be safe to call

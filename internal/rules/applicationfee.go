@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aidandevv/craig-extension/internal/detect"
-	"github.com/aidandevv/craig-extension/internal/domain"
+	"github.com/aidandevv/craig/internal/detect"
+	"github.com/aidandevv/craig/internal/domain"
 )
 
 // A fee amount more than this multiple of its normal ceiling is treated as

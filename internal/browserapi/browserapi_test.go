@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/aidandevv/craig-extension/internal/rules"
+	"github.com/aidandevv/craig/internal/rules"
 	"strings"
 	"testing"
 	"time"

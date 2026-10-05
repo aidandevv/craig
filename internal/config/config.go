@@ -15,7 +15,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/aidandevv/craig-extension/internal/rules"
+	"github.com/aidandevv/craig/internal/rules"
 )
 
 const (

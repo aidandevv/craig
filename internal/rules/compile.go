@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/aidandevv/craig-extension/internal/detect"
-	"github.com/aidandevv/craig-extension/internal/domain"
-	"github.com/aidandevv/craig-extension/internal/signals"
+	"github.com/aidandevv/craig/internal/detect"
+	"github.com/aidandevv/craig/internal/domain"
+	"github.com/aidandevv/craig/internal/signals"
 )
 
 // Deps are the runtime collaborators a rule set may need. A nil or unconfigured

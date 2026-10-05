@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/aidandevv/craig-extension/internal/detect"
-	"github.com/aidandevv/craig-extension/internal/domain"
+	"github.com/aidandevv/craig/internal/detect"
+	"github.com/aidandevv/craig/internal/domain"
 )
 
 const matchContextWords = 4

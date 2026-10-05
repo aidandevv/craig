@@ -6,9 +6,9 @@ import (
 	"math"
 	"strings"
 
-	"github.com/aidandevv/craig-extension/internal/detect"
-	"github.com/aidandevv/craig-extension/internal/domain"
-	"github.com/aidandevv/craig-extension/internal/marketdata"
+	"github.com/aidandevv/craig/internal/detect"
+	"github.com/aidandevv/craig/internal/domain"
+	"github.com/aidandevv/craig/internal/marketdata"
 )
 
 // marketRentCheck identifies a listed monthly USD rent that is unusually low

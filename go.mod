@@ -1,4 +1,4 @@
-module github.com/aidandevv/craig-extension
+module github.com/aidandevv/craig
 
 go 1.22
 

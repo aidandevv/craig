@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aidandevv/craig-extension/internal/cache"
-	"github.com/aidandevv/craig-extension/internal/domain"
+	"github.com/aidandevv/craig/internal/cache"
+	"github.com/aidandevv/craig/internal/domain"
 )
 
 func newVision(t *testing.T, handler http.HandlerFunc, cap int) (*Vision, *cache.Store) {

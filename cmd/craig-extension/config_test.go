@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aidandevv/craig-extension/internal/config"
+	"github.com/aidandevv/craig/internal/config"
 )
 
 func TestConfigInitAndTokenCommand(t *testing.T) {

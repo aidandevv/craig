@@ -10,8 +10,8 @@ import (
 	"syscall/js"
 	"time"
 
-	"github.com/aidandevv/craig-extension/internal/browserapi"
-	"github.com/aidandevv/craig-extension/internal/signals"
+	"github.com/aidandevv/craig/internal/browserapi"
+	"github.com/aidandevv/craig/internal/signals"
 )
 
 func main() {

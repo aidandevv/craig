@@ -3,7 +3,7 @@ package rules
 import (
 	"strings"
 
-	"github.com/aidandevv/craig-extension/internal/domain"
+	"github.com/aidandevv/craig/internal/domain"
 )
 
 // scopeText returns the listing text a scope selects. The boolean reports

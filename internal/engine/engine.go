@@ -11,12 +11,12 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/aidandevv/craig-extension/internal/detect"
-	"github.com/aidandevv/craig-extension/internal/domain"
-	"github.com/aidandevv/craig-extension/internal/marketplace"
-	"github.com/aidandevv/craig-extension/internal/risk"
-	"github.com/aidandevv/craig-extension/internal/rules"
-	"github.com/aidandevv/craig-extension/internal/trace"
+	"github.com/aidandevv/craig/internal/detect"
+	"github.com/aidandevv/craig/internal/domain"
+	"github.com/aidandevv/craig/internal/marketplace"
+	"github.com/aidandevv/craig/internal/risk"
+	"github.com/aidandevv/craig/internal/rules"
+	"github.com/aidandevv/craig/internal/trace"
 )
 
 // ErrInvalidListing wraps validation failures so callers can map them to a

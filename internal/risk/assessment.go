@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aidandevv/craig-extension/internal/domain"
-	"github.com/aidandevv/craig-extension/internal/rules"
+	"github.com/aidandevv/craig/internal/domain"
+	"github.com/aidandevv/craig/internal/rules"
 )
 
 type Finding struct {

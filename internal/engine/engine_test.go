@@ -10,10 +10,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/aidandevv/craig-extension/internal/cache"
-	"github.com/aidandevv/craig-extension/internal/domain"
-	"github.com/aidandevv/craig-extension/internal/rules"
-	"github.com/aidandevv/craig-extension/internal/signals"
+	"github.com/aidandevv/craig/internal/cache"
+	"github.com/aidandevv/craig/internal/domain"
+	"github.com/aidandevv/craig/internal/rules"
+	"github.com/aidandevv/craig/internal/signals"
 )
 
 func scamListing() domain.Listing {

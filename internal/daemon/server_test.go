@@ -15,10 +15,10 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/aidandevv/craig-extension/internal/cache"
-	"github.com/aidandevv/craig-extension/internal/config"
-	"github.com/aidandevv/craig-extension/internal/rules"
-	"github.com/aidandevv/craig-extension/internal/signals"
+	"github.com/aidandevv/craig/internal/cache"
+	"github.com/aidandevv/craig/internal/config"
+	"github.com/aidandevv/craig/internal/rules"
+	"github.com/aidandevv/craig/internal/signals"
 )
 
 const testToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

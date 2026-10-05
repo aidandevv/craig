@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/aidandevv/craig-extension/internal/config"
+	"github.com/aidandevv/craig/internal/config"
 )
 
 const configUsage = `Usage:
