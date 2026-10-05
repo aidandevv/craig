@@ -26,3 +26,11 @@ SHAs. Tags must refer to commits reachable from `main`. A separate job has
 write access only to create the draft release from the build artifact.
 Repository administrators should protect `main` and `web-v*` tags and restrict
 who can create release tags; workflow files cannot enforce those settings.
+
+## Reporting a vulnerability
+
+Please report security issues privately, not in a public issue. Use
+GitHub's **Report a vulnerability** button on this repository's Security tab,
+or email dev@aidandevaney.com with the steps to reproduce and the affected
+version. You should receive a reply within a few days, and fixes are released
+as a new Chrome Web Store version.
