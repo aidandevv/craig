@@ -45,3 +45,6 @@ extension/generated/
 
 # Local working notes and journals are intentionally not published.
 /docs/
+
+# Packaged extension archives
+*.zip
