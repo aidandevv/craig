@@ -8,11 +8,12 @@ explains every point of that score. Listing text never leaves your computer.
 The only network calls are optional photo checks, sent to Google Cloud Vision
 with your own API key.
 
-> Status: submitted to the Chrome Web Store and awaiting review. The analysis
-> engine runs in the extension as WebAssembly, so there is nothing else to
-> install. Until the listing is live, see [Install](#install) to load it from
-> source.
+**[Install Craig from the Chrome Web Store](https://chromewebstore.google.com/detail/hgpimmenacnoeochcfdogbmikinkjkhp)**
 
+The analysis engine runs in the extension as WebAssembly, so there is nothing
+else to install.
+
+[Chrome Web Store](https://chromewebstore.google.com/detail/hgpimmenacnoeochcfdogbmikinkjkhp) ·
 [Website](https://craig.aidandevaney.com/) ·
 [Privacy policy](https://craig.aidandevaney.com/privacy) ·
 [Security](SECURITY.md) · [MIT license](LICENSE)
@@ -63,8 +64,13 @@ used this month. [PRIVACY.md](PRIVACY.md) lists exactly what is stored and sent.
 
 ## Install
 
-Until the Chrome Web Store listing is live, build the extension from source.
-You need Docker (Go is not assumed on the host) and Node 22.
+Install Craig from the [Chrome Web Store](https://chromewebstore.google.com/detail/hgpimmenacnoeochcfdogbmikinkjkhp), then open any Craigslist
+listing and click the Craig toolbar icon.
+
+### Build from source
+
+To run your own build, you need Docker (Go is not assumed on the host) and
+Node 22.
 
 ```sh
 make wasm               # compile the engine to extension/generated/engine.wasm
