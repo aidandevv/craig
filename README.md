@@ -1,49 +1,49 @@
 # Apartment Hunter
 
-Apartment Hunter is a single-machine review system for SF Craigslist rentals. It polls the approved Flipify API, enriches new listings exactly once, runs parallel fraud-risk signals, and presents only qualified candidates in a small dashboard. Exceptional low-risk, high-fit matches can reach Telegram immediately; every qualified listing appears once in the next Resend digest.
+Finding a rental in San Francisco means sorting through listings that may look promising before there is enough evidence to trust them. Apartment Hunter collects Craigslist rentals through Flipify, scores each listing against the renter's preferences, and checks for fraud risk signals. Low-risk listings enter a dashboard and email digest; the strongest preference matches can also trigger a Telegram alert.
 
-It is designed for a Mac Mini first, with Docker Compose keeping a later VPS move reproducible.
+The system runs on one machine, starting with a Mac Mini. Docker Compose keeps the same setup reproducible for a later VPS move.
 
-## What it does
+## From search result to review queue
 
-- Keeps Flipify's opaque listing ID and deduplicates before enrichment.
-- Uses one primary image per candidate for independent Google Vision Web Detection and OCR budgets, each capped below 1,000 monthly units.
-- Evaluates reverse-image, OCR, and AI-image signals concurrently; missing providers degrade a signal rather than blocking persistence.
-- Stores listings, scores, notifications, feature-unit usage, and costs in SQLite. Only the Go service opens the database.
-- Uses deterministic price/location/bedroom preferences for `fit_score`, not an AI judgment.
-- Limits Telegram to `fraud_score <= 0.20`, `fit_score >= 0.80`, and no hard risk flag. Resend is the complete review record.
+1. **Find and score listings.** The poller searches through the approved Flipify API, keeps each provider listing ID, and enriches a new listing once. Price, location, and bedroom preferences determine its `fit_score`; an AI model does not make that decision.
+2. **Check the available evidence.** Google Vision checks one primary image for reverse-image matches and text, while an ONNX model supplies a separate AI-image signal. These checks run in parallel. If a provider is unavailable, the listing is still saved and the signal records the gap.
+3. **Review low-risk candidates.** Listings below the qualification risk threshold appear in the dashboard. Telegram is reserved for listings with `fraud_score <= 0.20`, `fit_score >= 0.80`, and no hard risk flag. Every qualified listing enters the next Resend digest, so the email remains the complete review record.
 
-AI inquiry drafting, direct marketplace scraping, and BatchData comps are intentionally out of scope for this MVP.
+SQLite stores listings, scores, notification state, provider usage, and costs. The Go service is the only process that opens the database. Vision Web Detection and OCR have separate monthly budgets, each capped below 1,000 units.
 
-## Quick start
+A risk score is a reason to inspect a listing, not a verdict about the person who posted it. Provider gaps can leave a check incomplete, so a low score is not proof that a listing is safe.
 
-1. Copy `.env.example` to `.env`, add only the credentials you are ready to use, and do not commit it.
-2. Before enabling the poller, verify the live Flipify allowance through `/account/credits` and `/account/usage`. Keep `FLIPIFY_POLL_INTERVAL=5m` until the observed allowance supports more frequent polling.
-3. Start the local stack:
+AI inquiry drafting, direct marketplace scraping, and BatchData comps are outside this MVP.
+
+## Run it locally
+
+1. Copy `.env.example` to `.env` and add the credentials you plan to use. Keep `.env` out of Git.
+2. Before enabling the poller, check the live Flipify allowance through `/account/credits` and `/account/usage`. Keep `FLIPIFY_POLL_INTERVAL=5m` until the observed allowance supports more frequent polling.
+3. Start the stack:
 
    ```sh
    docker compose up --build
    ```
 
-4. Open the dashboard at [http://localhost:5000](http://localhost:5000), service API at [http://localhost:8080/healthz](http://localhost:8080/healthz), Prometheus at [http://localhost:9091](http://localhost:9091), and Grafana at [http://localhost:3000](http://localhost:3000).
+4. Open the [review dashboard](http://localhost:5000), [service health endpoint](http://localhost:8080/healthz), [Prometheus](http://localhost:9091), and [Grafana](http://localhost:3000).
 
-Without `FLIPIFY_API_KEY`, the poller remains safely disabled while the API, dashboard, metrics, and sidecar start normally. Without a mounted ONNX model, the sidecar returns an explicit unavailable model result and keeps the rest of the pipeline live.
+Without `FLIPIFY_API_KEY`, the poller stays disabled while the API, dashboard, metrics, and sidecar start. Without a mounted ONNX model, the sidecar reports that the model is unavailable and the rest of the pipeline continues.
 
-## Test and format
+## Verify the build
 
-The repository uses a Docker build because the project requires Go 1.21+ and the local host toolchain is not assumed.
+The Docker build runs the Go tests and compiles the service. The sidecar test command checks the Python inference service.
 
 ```sh
-docker build --target build .
 docker build --target build .
 docker compose run --rm inference-sidecar python -m pytest
 ```
 
-## Provider setup
+## Configure providers
 
-- **Flipify:** configure `FLIPIFY_API_KEY`; the client uses `/listings/search`, `/listings/{id}/enrich`, `/account/credits`, and `/account/usage`.
-- **Google Vision:** use a restricted `GOOGLE_VISION_API_KEY` or mount a service account and set `GOOGLE_APPLICATION_CREDENTIALS`. Keep both Vision feature caps under 1,000 units per month.
-- **ONNX:** mount a compatible model as `models/sentry-image.onnx`. The model adapter assumes a standard 224px NCHW classifier; validate the selected model's input and AI-class index before going live.
-- **Resend/Telegram:** both clients stay disabled until all required credentials are set. They never block SQLite persistence.
+- **Flipify:** set `FLIPIFY_API_KEY`. The client uses `/listings/search`, `/listings/{id}/enrich`, `/account/credits`, and `/account/usage`.
+- **Google Vision:** set a restricted `GOOGLE_VISION_API_KEY`, or mount a service account and set `GOOGLE_APPLICATION_CREDENTIALS`. Keep both Vision feature caps below 1,000 units per month.
+- **ONNX:** mount a compatible model as `models/sentry-image.onnx`. The adapter expects a standard 224px NCHW classifier; verify the model's input and AI-class index before using its signal.
+- **Resend and Telegram:** delivery stays disabled until the required credentials are set. A delivery failure does not block SQLite persistence.
 
-See [Architecture](ARCHITECTURE.md), [deployment](DEPLOYMENT.md), [cost guardrails](COSTS.md), [API reference](API.md), and [design decisions](DESIGN_DECISIONS.md).
+For implementation and operation details, see [Architecture](ARCHITECTURE.md), [deployment](DEPLOYMENT.md), [cost guardrails](COSTS.md), [API reference](API.md), and [design decisions](DESIGN_DECISIONS.md).
