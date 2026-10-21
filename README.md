@@ -1,176 +1,206 @@
 # Craig
 
-A local-first scam detector for online marketplace listings.
+Local-first, explainable scam indicators for Craigslist listings.
 
-You browse Craigslist normally. The Craig Chrome extension reads the listing on
-screen and scores it against a rule set you control, inside your browser, then
-explains every point of that score. Listing text never leaves your computer.
-The only network calls are optional photo checks, sent to Google Cloud Vision
-with your own API key.
+Craig is a Chrome extension that checks listing text, contact details, rental
+fees, advertised rent, and optional photo evidence. The Go analysis engine runs
+inside the extension as WebAssembly. Listing text stays in your browser, and
+no account or local server is required.
 
-**[Install Craig from the Chrome Web Store](https://chromewebstore.google.com/detail/hgpimmenacnoeochcfdogbmikinkjkhp)**
+**[Install from the Chrome Web Store](https://chromewebstore.google.com/detail/craig/hgpimmenacnoeochcfdogbmikinkjkhp)**
 
-The analysis engine runs in the extension as WebAssembly, so there is nothing
-else to install.
-
-[Chrome Web Store](https://chromewebstore.google.com/detail/hgpimmenacnoeochcfdogbmikinkjkhp) ·
 [Website](https://craig.aidandevaney.com/) ·
-[Privacy policy](https://craig.aidandevaney.com/privacy) ·
-[Security](SECURITY.md) · [MIT license](LICENSE)
+[Privacy policy](PRIVACY.md) · [Security](SECURITY.md) · [MIT license](LICENSE)
 
-## Why it exists
+## Contents
 
-This is the counterpart to Apartment Hunter, an earlier project that pays an
-API to *find* listings and filter them down. That is a push model
-with a per-listing cost and a fixed idea of what you are shopping for. This
-inverts it: you find the listing, the tool judges it, and the expensive parts
-only run when you ask.
+- [Example analysis](#example-analysis)
+- [Installation](#installation)
+- [Usage and configuration](#usage-and-configuration)
+- [Default checks and scoring](#default-checks-and-scoring)
+- [Privacy and storage](#privacy-and-storage)
+- [Command line and local daemon](#command-line-and-local-daemon)
+- [Development](#development)
+- [Repository layout](#repository-layout)
+- [Releases](#releases)
+- [Contributing and support](#contributing-and-support)
+- [License](#license)
 
-## Design principles
+## Example analysis
 
-- **Explainability over a number.** A score with no reasons is not actionable.
-  Every rule that fires reports what it matched.
-- **A check that could not run is not a check that passed.** Missing API keys and
-  exhausted quotas are normal states, and are reported as their own category so a
-  listing that could not be verified never looks clean.
-- **Signals are indicators, never accusations.** Nothing here proves fraud.
-- **Bring your own key.** Google Vision is the headline signal and uses your
-  credentials. With no key configured, the pattern and contact rules still run.
-- **Green flags cannot move the score.** Reassuring phrases are shown to you but
-  contribute nothing, because anything that lowers a score is something a scammer
-  will write on purpose.
+The current result panel, using the fictional listing in the
+[CLI example](#command-line-and-local-daemon) with no Vision key:
 
-## What is here now
+<p>
+  <img src=".github/assets/analysis-overview.png" alt="Craig's result panel showing a score of 100, coverage of 11 of 16 checks, and highlighted text behind two high-risk findings." width="350" />
+  <img src=".github/assets/analysis-coverage.png" alt="The same panel scrolled to seven passed checks and five skipped checks, with a photo check explaining that it needs a Google Vision API key." width="350" />
+</p>
 
-| Package | Purpose |
-|---|---|
-| `internal/domain` | `Listing` and `SignalResult`, the two types every layer shares |
-| `internal/detect` | `Detector` interface and concurrent fan-out across signals |
-| `internal/engine` | One analysis pipeline shared by the extension and the CLI |
-| `internal/browserapi` | JSON boundary between the extension and the WebAssembly engine |
-| `internal/signals` | Google Vision reverse-image search and OCR watermark detection |
-| `internal/rules` | Embedded/user-defined YAML rules compiled into detectors |
-| `internal/marketdata` | Versioned offline HUD Small Area Fair Market Rent benchmarks |
-| `internal/risk` | Explainable score, band, coverage, and five result buckets |
-| `internal/marketplace` | Listing payload validation and normalization |
-| `internal/cache`, `internal/config`, `internal/daemon` | SQLite cache, private config, and optional localhost API for the CLI build |
-| `cmd/craig-wasm` | WebAssembly entry point loaded by the extension |
-| `cmd/craig-extension` | Offline `analyze` command and optional local daemon |
-| `extension` | Manifest V3 Craigslist adapter, in-browser engine host, result badge, and options page |
+The first view shows the score and matched text. The second shows passed and
+unavailable checks, including why a photo check could not run.
 
-No listing is ever persisted. Craig stores only Vision results for photos
-checked in the last 24 hours, keyed by image URL, plus a count of photo checks
-used this month. [PRIVACY.md](PRIVACY.md) lists exactly what is stored and sent.
+## Installation
 
-## Install
+### Chrome Web Store
 
-Install Craig from the [Chrome Web Store](https://chromewebstore.google.com/detail/hgpimmenacnoeochcfdogbmikinkjkhp), then open any Craigslist
-listing and click the Craig toolbar icon.
+1. Install [Craig](https://chromewebstore.google.com/detail/craig/hgpimmenacnoeochcfdogbmikinkjkhp) in Chrome 120 or later.
+2. Open an individual Craigslist listing over HTTPS. Reload listings that were
+   already open when you installed the extension.
+3. Click the Craig toolbar icon to analyze the listing.
+
+The current browser adapter supports Craigslist listing pages. The default
+rules focus on rental listings; other marketplaces are not supported.
 
 ### Build from source
 
-To run your own build, you need Docker (Go is not assumed on the host) and
-Node 22.
+Prerequisites: Git, Make, Node.js 22 with npm, and Docker with a running Docker
+engine. The Makefile uses a Go 1.26.10 container; a host Go installation is optional.
+Run these commands from a POSIX shell:
 
 ```sh
-make wasm               # compile the engine to extension/generated/engine.wasm
+git clone https://github.com/aidandevv/craig.git
+cd craig
 make extension-install
+make wasm
 make extension-build
 ```
 
-Open `chrome://extensions`, turn on **Developer mode**, choose **Load
-unpacked**, and select the repository's `extension` directory. Open any
-Craigslist listing (HTTPS, Chrome 120 or later) and click the Craig toolbar
-icon to analyze it.
+Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**,
+and select the repository's `extension` directory. Follow the same usage steps
+as the store version. After rebuilding, reload the extension and the listing tab.
 
-Release packages are built by CI: pushing a `web-v<version>` tag that matches
-`extension/manifest.json` and points at a commit on `main` creates a draft
-GitHub release containing the zip to upload to the Chrome Web Store. See
-[SECURITY.md](SECURITY.md) for the extension's security boundaries.
+`make wasm` generates both `extension/generated/engine.wasm` and the matching Go
+runtime, `wasm_exec.js`. Both are required before building or testing the extension.
 
-## Using the extension
+## Usage and configuration
 
-Craig works without any setup. Text, contact, fee, rent, and HUD checks run
-immediately; photo checks are reported as **not evaluated** until you add a
-key.
+Analysis runs on demand by default. Text and structured-data checks require no
+credentials. Photo checks appear as **not evaluated** until a Google Cloud
+Vision key is configured. Open the extension's **Options** to change settings.
 
-To turn on photo checks, open the extension's **Options** and follow the five
-steps under **Photo checks** to create a Google Cloud Vision API key. Restrict
-the key to the Cloud Vision API and set a budget alert. The key is stored only
-in this browser profile's extension storage and is sent only to Google. The
-same page sets how many photos to check per listing (default 4), a monthly
-limit per check type, and whether to analyze every listing automatically when
-it opens (off by default).
+### Optional photo checks
 
-Each uncached photo uses one `WEB_DETECTION` request (shared by the reverse
-image and stock-photo rules) and one `TEXT_DETECTION` OCR request (for the MLS
-watermark rule). Only photos from `images.craigslist.org` are sent. Results are
-cached for 24 hours and re-scored against your current rules on every analysis.
-Clicking the Craig toolbar icon checks photos fresh, within the monthly limit.
-The badge's **Check again** button reruns the checks using cached photo
-results. With auto-run off, Craig never calls Vision without a toolbar click.
-Failed photos are reported as incomplete. Only matching pages
-and full/partial image matches are used; visually similar suggestions are
-ignored.
+Follow the five setup steps under **Photo checks** in Options to create a Google
+Cloud project, enable billing and the Cloud Vision API, and save an API key.
+Restrict the key to the Cloud Vision API and configure a Google Cloud budget
+alert. Google bills photo checks to your project.
 
-The badge always shows coverage, so a listing that could not be fully checked
-never looks clean. Every result also has a collapsed **Verified execution
-log** showing the extension, engine, detector, cache, and Vision stages for
-that request. It omits credentials, listing text, and image URLs.
+| Setting                      | Default | Behavior                                                                       |
+| ---------------------------- | ------- | ------------------------------------------------------------------------------ |
+| Vision API key               | None    | Photo checks remain unavailable until a key is saved                           |
+| Photos per listing           | 4       | Checks the first photos up to this limit; configurable from 1 to 24            |
+| Monthly limit per check type | 999     | Separate counters for reverse-image and OCR checks                             |
+| Analyze automatically        | Off     | When enabled, analyzes each listing when it opens and permits new photo checks |
 
-The Options page also has a rule builder for curated pattern checks. Saved
-rules are validated by the engine and kept in extension storage. Custom,
-contact, image, and regex rules are preserved as read-only cards when a visual
-edit is saved.
+With the default image rules, each uncached photo uses one `WEB_DETECTION`
+request shared by the real-estate and stock-photo rules, plus one
+`TEXT_DETECTION` request for watermark text. Only HTTPS photo URLs hosted on
+`images.craigslist.org` are submitted.
 
-## Default checks
+- **Toolbar icon:** reruns analysis and requests fresh photo evidence, subject
+  to the monthly limit.
+- **Check again in the result panel:** reruns analysis with current rules and
+  cached evidence. If auto-run is enabled, missing photo evidence may be fetched.
+- **Auto-run:** reuses photo evidence for up to 24 hours and may fetch evidence
+  on a cache miss.
 
-### Rental fee checks
+With auto-run off, listing analysis can contact Vision only after a toolbar
+click. The Options page's **Test key** action also contacts Google, using an
+empty request. The result panel includes coverage and a collapsed **Verified
+execution log** for the request; the log excludes credentials, listing text,
+and image URLs. If Craig asks you to wait, allow at least 10 seconds between
+analyses in the same tab.
 
-The default offline fee checks are deliberately caution-only and reported
-separately: any hold/reservation fee, key money, option/commitment/priority/
-waitlist fee, application or good-faith deposit, or pre-lease fee is
-nonstandard; familiar fees are flagged only when unusually high. The default
-application-fee threshold is $50; screening, processing, administrative,
-lease-initiation, move-in, amenity, convenience, and pet fees use their own
-generous ceilings. “Charge” and “cost” are treated like “fee.” A fee alone can
-never create a hard flag. Adjust `application_fee_high_threshold` in the rule
-builder or your rules YAML if a different local application threshold fits
-your market.
+### Rules
 
-### Advertised-rent consistency check
+The Options rule builder can add, edit, disable, or remove curated pattern
+rules, including their text scope, preset, and severity. Other rule types and
+custom expressions are displayed as read-only cards and preserved when you save.
+The engine validates the complete ruleset before applying it.
 
-The default rules also compare the page's structured rent with dollar amounts
-in its title. A difference of 10% or more creates a small, caution-only prompt
-to confirm the current rent before applying or paying a fee. It is designed to
-surface stale or bait-and-switch pricing, not to allege fraud, and is not
-evaluated when either input is absent.
+For custom YAML rules, start with
+[`internal/rules/default_rules.yaml`](internal/rules/default_rules.yaml) and use
+the [CLI](#command-line-and-local-daemon). The Options page does not provide a
+YAML editor or controls for fee and rent thresholds. To change those defaults
+in a source build, edit the embedded YAML and rebuild the WebAssembly engine
+and extension.
 
-### HUD market-rent caution check
+## Default checks and scoring
 
-The default rules also include one offline, caution-only market-rent check
-(`weight: 0.15`). It compares a listing only when the page supplies a monthly
-USD price, a studio-to-four-bedroom count, and a five-digit ZIP included in the
-bundled HUD data. It covers 1,395 ZIP codes across the SF Bay Area, Los Angeles,
-and the New York metro area (including Jersey City and Newark). Missing fields
-or an unsupported ZIP are shown as **not evaluated**; the engine never falls
-back to a citywide rate or geocodes an address.
+Craig ships with 16 enabled rules:
 
-The bundled snapshot is [HUD FY 2027 Small Area Fair Market Rents](https://www.huduser.gov/portal/datasets/fmr/fmr2027/FY27_safmrs.xlsx), effective October 1, 2026. A SAFMR is HUD's ZIP-level estimate of the 40th-percentile **gross** rent, including estimated tenant-paid utilities. It is not a median asking rent, an appraisal, a live comparable set, or evidence of fraud. The rule is intentionally conservative: only rents at or below 65% of the benchmark add a review cue, and its explanation says exactly which HUD rate was used.
+| Category            | Checks                                                                                                                                                                                          |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Payment and contact | Irreversible payment requests, urgency, absent owners, contact evasion, deposits or payments before access, obfuscated contact details, marketplace-only contact, and direct phone availability |
+| Rental fees         | Nonstandard hold, reservation, and similar fees; unusually high standard fees                                                                                                                   |
+| Rent                | Advertised-price inconsistencies and unusually low rent against supported HUD benchmarks                                                                                                        |
+| Photos, optional    | Matches on real-estate sites, stock-photo sources, and agency or MLS watermark text                                                                                                             |
 
-Refresh the embedded asset whenever HUD publishes a new effective schedule;
-the source workbook is not committed:
+Photo matching uses matching pages and full or partial image matches from
+Vision; visually similar suggestions are ignored. Partial photo failures are
+reported in coverage rather than treated as a clean result.
 
-```sh
-python3 \
-  scripts/build_hud_safmr_data.py /path/to/FY27_safmrs.xlsx \
-  internal/marketdata/fy2027_selected.json
-```
+### Rental fees and rent comparisons
+
+- **Fees:** nonstandard fees are caution signals regardless of amount. Standard
+  fees are flagged above category-specific thresholds; the default application
+  fee threshold is $50. These are review cues, not statements about local law.
+  Fee rules cannot create a hard flag.
+- **Advertised rent:** a dollar amount in the title that differs from the page
+  price by at least 10% of the page price adds a caution signal. A missing page
+  price or empty title makes the check unavailable. A title without a dollar
+  amount produces no mismatch finding.
+- **HUD benchmark:** monthly USD rents at or below 65% of the bundled benchmark
+  add a caution signal with weight `0.15`. The check requires a bedroom count
+  from studio through four bedrooms and a supported five-digit ZIP. Missing
+  inputs or unsupported ZIPs are reported as **not evaluated**.
+
+The bundled [HUD FY 2027 Small Area Fair Market Rent snapshot](internal/marketdata/fy2027_selected.json)
+covers 1,395 ZIP codes across the SF Bay Area, Los Angeles, and the New York
+metro area, including Jersey City and Newark. Its recorded effective date is
+October 1, 2026. The
+[source workbook](https://www.huduser.gov/portal/datasets/fmr/fmr2027/FY27_safmrs.xlsx)
+provides ZIP-level 40th-percentile gross rents, including estimated tenant-paid
+utilities. It is an offline comparison benchmark, not a live asking-rent feed
+or property valuation. Craig does not geocode addresses or substitute citywide
+rates for unsupported ZIPs.
+
+### Interpreting results
+
+Rule contributions are added and clamped to a score from `0` to `1`. The default
+bands begin at `0.30` for caution, `0.55` for elevated concern, and `0.75` for high
+concern. A hard flag sets the band to high without changing the arithmetic
+score. Positive signals are informational and never reduce the score.
+
+Every enabled rule is reported as high risk, potentially risky, a positive
+signal, passed, or not evaluated. Coverage is shown separately, and the badge
+uses a partial-check state when too few rules ran, unless a hard flag was found.
+Craig's results are indicators for further verification; they do not prove
+fraud or establish that a listing is safe.
+
+## Privacy and storage
+
+The Chrome extension analyzes listing text locally and does not persist listing
+payloads or completed assessments. There are no accounts or analytics.
+
+The extension stores the following in this browser profile's
+`chrome.storage.local`, restricted to trusted extension contexts:
+
+- The Vision API key, settings, and saved rules.
+- Vision photo evidence, keyed by a hash of the image URL and check type.
+  Evidence is reused for up to 24 hours; expired entries are pruned after analysis.
+- Photo-check usage counters keyed by month and check type.
+
+Optional photo checks send public photo URLs and your key to Google Cloud
+Vision. The key is sent in a request header. Uninstalling the extension removes
+its browser storage. See [PRIVACY.md](PRIVACY.md) and
+[SECURITY.md](SECURITY.md) for the extension's data handling and trust boundaries.
+The optional native daemon uses separate configuration files and SQLite storage.
 
 ## Command line and local daemon
 
-The same engine also builds as a native CLI, useful for testing rules without a
-browser.
+The native `analyze` command uses the same rule, detector, and scoring packages
+to check a JSON listing offline:
 
 ```sh
 make build
@@ -181,52 +211,121 @@ make build
 }'
 ```
 
-Use `--json` for machine-readable output. Pass a file through `--file` (or
-`--file -` for stdin), and use `--rules rules.yaml` to load a custom ruleset.
-The default rules work entirely offline; image rules are explicitly reported as
-`no_api_key` unless a Vision key is configured.
+With the embedded rules, this example reports risk `1.00`, a high band, a hard
+flag, and coverage of 11 of 16 checks. Runtime varies by machine.
 
-Recorded offline run with the embedded rules and no Vision key:
+| Flag                  | Purpose                                                  |
+| --------------------- | -------------------------------------------------------- |
+| `--data '<json>'`     | Read an inline listing                                   |
+| `--file listing.json` | Read a listing file; use `--file -` for stdin            |
+| `--rules rules.yaml`  | Load a custom YAML ruleset instead of the embedded rules |
+| `--json`              | Emit the full assessment as JSON                         |
 
-```text
-Risk 1.00  HIGH  (hard flag)
-11 of 16 checks ran in 0ms
+Pass exactly one of `--data` or `--file`. The `analyze` command does not load
+Vision credentials or daemon configuration; image rules always report
+`no_api_key`. See [`internal/domain/types.go`](internal/domain/types.go) for the
+listing fields. Run `./bin/craig-extension analyze -h` for command help.
 
-HIGH RISK
-  • Owner claims to be unreachable in person
-  • Payment requested by a method with no recourse
+An optional native daemon provides an authenticated HTTP API, bound to
+`127.0.0.1:8765` by default:
 
-POTENTIALLY RISKY
-  • Seller reachable only through the marketplace
-  • High-pressure language discouraging due diligence
-
-NOT EVALUATED (5)
-  market_rent_below_hud            market_rent_inputs_missing
-  mls_watermark                    no_api_key
-  rent_price_mismatch              rent_price_inputs_missing
-  reverse_image_real_estate        no_api_key
-  stock_photos                     no_api_key
+```sh
+./bin/craig-extension config init
+./bin/craig-extension daemon
 ```
 
-`craig-extension config init` and `craig-extension daemon` still provide the
-authenticated localhost API (`127.0.0.1:8765`) from earlier builds. The
-extension does not use it.
+Initialization creates private config and rules files under
+`~/.config/craig-extension/`; the daemon uses a SQLite cache under
+`~/.local/share/craig-extension/`. It can run Vision checks when credentials are
+configured. Run `./bin/craig-extension daemon -h` for flags. The current Chrome
+extension runs independently and does not connect to this daemon.
 
 ## Development
 
-Go is not assumed on the host; Go builds run in a container.
+After the [source setup](#build-from-source), run:
 
 ```sh
-make test            # Go vet + tests + build, via the Dockerfile build stage
-make wasm            # build the WebAssembly engine for the extension
-make build           # extract the CLI to ./bin/craig-extension
-make format          # gofmt
-make tidy            # go mod tidy
-make extension-test  # fixture, badge, engine, and storage tests
-make extension-build # typecheck and build the unpacked MV3 extension
+make test             # Go vet, tests, and native build in Docker
+make extension-test   # DOM fixtures, badge, worker, storage, and WASM integration tests
+make extension-build  # TypeScript checks and extension bundles
 ```
+
+Re-run `make wasm` after changing Go code or embedded rules. Additional targets:
+
+| Command                              | Purpose                                              |
+| ------------------------------------ | ---------------------------------------------------- |
+| `make build`                         | Build the host-platform CLI at `bin/craig-extension` |
+| `make format`                        | Format Go sources with `gofmt` in Docker             |
+| `make tidy`                          | Update Go module metadata in Docker                  |
+| `make test-pkg PKG=./internal/rules` | Run one Go package's tests in Docker                 |
+
+CI reads the Go toolchain version from `go.mod` and runs Go vet, race tests, the
+native build, and a vulnerability scan with `govulncheck` v1.9.0. It
+also builds and tests the extension and verifies that the shared WebAssembly
+engine does not depend on native-only storage or daemon packages. See
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) for the exact checks.
+
+### Mascot assets
+
+[`mascot-motion/`](mascot-motion/README.md) is a separate Remotion project for
+sprites and animation assets. It is not required to build or use the extension.
+It has its own dependency install, tests, linting, and export commands; see its
+README for setup.
+
+### Refreshing HUD data
+
+The source workbook is not committed. Regenerating the current FY 2027 snapshot
+requires Python 3.11 or later and `openpyxl` in your Python environment:
+
+```sh
+python3 scripts/build_hud_safmr_data.py FY27_safmrs.xlsx \
+  internal/marketdata/fy2027_selected.json
+```
+
+The generator is specific to FY 2027. When moving to a new schedule, update its
+source metadata, the embedded asset reference and validation in
+[`internal/marketdata/hud_safmr.go`](internal/marketdata/hud_safmr.go), and related
+tests and documentation. Rebuild the WebAssembly engine to include changed data.
+
+## Repository layout
+
+| Path                                                                                                                 | Purpose                                                                           |
+| -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| [`extension/`](extension/)                                                                                           | Manifest V3 worker, Craigslist adapter, results panel, Options, and browser tests |
+| [`cmd/craig-wasm/`](cmd/craig-wasm/)                                                                                 | WebAssembly entry point and extension-storage bridge                              |
+| [`cmd/craig-extension/`](cmd/craig-extension/)                                                                       | Offline CLI, native configuration, and optional daemon                            |
+| [`internal/engine/`](internal/engine/), [`internal/browserapi/`](internal/browserapi/)                               | Analysis pipeline for the browser and daemon, plus the browser JSON API           |
+| [`internal/domain/`](internal/domain/), [`internal/marketplace/`](internal/marketplace/)                             | Shared listing and result types; payload normalization and validation             |
+| [`internal/rules/`](internal/rules/), [`internal/detect/`](internal/detect/), [`internal/risk/`](internal/risk/)     | Rule parsing and compilation, concurrent detectors, scoring, and coverage         |
+| [`internal/signals/`](internal/signals/), [`internal/marketdata/`](internal/marketdata/)                             | Vision photo checks and embedded HUD rent benchmarks                              |
+| [`internal/cache/`](internal/cache/), [`internal/config/`](internal/config/), [`internal/daemon/`](internal/daemon/) | Native-only SQLite storage, private configuration, and HTTP API                   |
+| [`internal/trace/`](internal/trace/)                                                                                 | Request execution tracing                                                         |
+| [`scripts/`](scripts/)                                                                                               | HUD snapshot generator                                                            |
+| [`mascot-motion/`](mascot-motion/README.md)                                                                          | Mascot source artwork, animation compositions, and asset exporters                |
+
+## Releases
+
+The [web release workflow](.github/workflows/release-web.yml) runs on `web-v*`
+tags. The version suffix must match `extension/manifest.json`, and the tagged
+commit must be reachable from `main`. CI builds the engine, tests and builds
+the extension, then creates a draft GitHub release with
+`craig-web-package.zip`. The archive contains `manifest.json`, `assets/`, and
+`dist/` for manual Chrome Web Store upload; the workflow does not publish to
+the store.
+
+## Contributing and support
+
+Use a focused working branch and run the relevant development checks before
+opening a pull request. Changes to detection rules should include examples of
+both suspicious phrasing and ordinary listing text to guard against false
+positives. Adapter changes should update the DOM fixtures and extraction tests.
+
+For bugs and feature requests, use this repository's GitHub Issues. Include the
+extension and Chrome versions, sanitized reproduction steps, and relevant
+execution-log details. Report vulnerabilities privately as described in
+[SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT. See [LICENSE](LICENSE). To report a security issue, follow
-[SECURITY.md](SECURITY.md).
+This repository is licensed under the [MIT License](LICENSE). Third-party
+dependencies retain their respective licenses.

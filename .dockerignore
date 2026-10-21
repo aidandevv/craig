@@ -6,3 +6,8 @@
 /extension/node_modules/
 /extension/dist/
 /extension/.test-dist/
+/extension/generated/
+/mascot-motion/node_modules/
+/mascot-motion/build/
+/mascot-motion/out/
+/docs/

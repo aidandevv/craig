@@ -3,12 +3,25 @@
 A self-contained Remotion project for Craig, the Craig Extension mascot: an old sea
 captain in two-color pixel art.
 
+## Setup
+
+Use Node.js 22 and npm. From the repository root:
+
+```sh
+cd mascot-motion
+npm ci --ignore-scripts
+```
+
+Run the commands below from this directory. This project is independent of the
+extension build; generated assets are written to the ignored `out/` directory.
+
 ## How Craig is drawn
 
 Craig lives on a 56×80 canvas in two colors, ink and paper. Each body part is a text
 pixel map in `src/craig/layers/`, where `#` is ink, `.` is paper, and a space is
 transparent:
 
+<!-- prettier-ignore -->
 ```ts
 export const example: Layer = {
 	name: "example",
@@ -56,11 +69,12 @@ all of them side by side on light and dark.
 ## Commands
 
 ```sh
-npm run dev          # Remotion Studio: every sprite still, both loading loops, and the idle loop
+npm run dev          # Remotion Studio: sprite stills, three search loops, and the idle loop
 npm test             # layers, stacking, mirroring, PNG encoding, pose and animation plans
 npm run export       # every sprite at 1x/2x/4x/8x, dark variants, sheets, and text grids
 npm run export:idle  # the idle sprite sheet and the CSS the marketing site drops in
 npm run lint         # ESLint and tsc
+npm run build        # bundle the Remotion project; does not render a video
 ```
 
 ## Animations
@@ -69,6 +83,8 @@ npm run lint         # ESLint and tsc
   `src/craig/anim/telescope/` and `src/craig/anim/lookout/`. Both start and end on the
   base pose so they loop cleanly, and both hold each drawing for a few frames rather than
   tweening.
+- `Craig-Peek-Search` (`src/craig/anim/peek/`) is a third search loop that raises the
+  spyglass, looks in both directions, and returns to the base pose.
 - `Craig-Idle-Loop` (`src/craig/idle.ts`) is the marketing-site idle: he breathes, blinks,
   tips his hat, and always settles back into the same resting pose.
 
@@ -97,3 +113,8 @@ import `.tsx` files, and type-only imports need `import type`.
 
 `archive/miner/` holds the previous miner mascot and its telescope loop. It isn't
 built or type-checked. The spyglass timing is kept for Craig's searching state.
+
+## License
+
+Project source is covered by the repository's [MIT License](../LICENSE).
+Third-party dependencies retain their respective licenses.
