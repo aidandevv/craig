@@ -14,6 +14,7 @@ no account or local server is required.
 
 ## Contents
 
+- [Example analysis](#example-analysis)
 - [Installation](#installation)
 - [Usage and configuration](#usage-and-configuration)
 - [Default checks and scoring](#default-checks-and-scoring)
@@ -24,6 +25,19 @@ no account or local server is required.
 - [Releases](#releases)
 - [Contributing and support](#contributing-and-support)
 - [License](#license)
+
+## Example analysis
+
+The current result panel, using the fictional listing in the
+[CLI example](#command-line-and-local-daemon) with no Vision key:
+
+<p>
+  <img src=".github/assets/analysis-overview.png" alt="Craig's result panel showing a score of 100, coverage of 11 of 16 checks, and highlighted text behind two high-risk findings." width="350" />
+  <img src=".github/assets/analysis-coverage.png" alt="The same panel scrolled to seven passed checks and five skipped checks, with a photo check explaining that it needs a Google Vision API key." width="350" />
+</p>
+
+The first view shows the score and matched text. The second shows passed and
+unavailable checks, including why a photo check could not run.
 
 ## Installation
 
