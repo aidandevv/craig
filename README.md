@@ -54,7 +54,7 @@ rules focus on rental listings; other marketplaces are not supported.
 ### Build from source
 
 Prerequisites: Git, Make, Node.js 22 with npm, and Docker with a running Docker
-engine. The Makefile uses a Go 1.25 container; a host Go installation is optional.
+engine. The Makefile uses a Go 1.26.10 container; a host Go installation is optional.
 Run these commands from a POSIX shell:
 
 ```sh
@@ -259,7 +259,8 @@ Re-run `make wasm` after changing Go code or embedded rules. Additional targets:
 | `make tidy`                          | Update Go module metadata in Docker                  |
 | `make test-pkg PKG=./internal/rules` | Run one Go package's tests in Docker                 |
 
-CI runs Go vet, race tests, the native build, and a Go vulnerability scan. It
+CI reads the Go toolchain version from `go.mod` and runs Go vet, race tests, the
+native build, and a vulnerability scan with `govulncheck` v1.9.0. It
 also builds and tests the extension and verifies that the shared WebAssembly
 engine does not depend on native-only storage or daemon packages. See
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) for the exact checks.
